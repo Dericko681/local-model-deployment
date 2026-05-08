@@ -1,0 +1,80 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llm-ingress
+  namespace: llm-system
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-connections: "100"
+spec:
+  rules:
+    - host: llm.local
+      http:
+        paths:
+          - path: /v1/completions
+            pathType: Prefix
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 8000
+          - path: /v1/chat/completions
+            pathType: Prefix
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 8000
+          - path: /v1/models
+            pathType: Prefix
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 8000
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 8000
+          - path: /metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 8000
+    - host: llm-monitoring.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-server
+                port:
+                  number: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway
+  namespace: llm-system
+  labels:
+    app: llm-gateway
+spec:
+  type: NodePort
+  selector:
+    app: vllm
+  ports:
+    - port: 80
+      targetPort: 8000
+      nodePort: 30080
+      name: http

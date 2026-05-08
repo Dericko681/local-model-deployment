@@ -1,0 +1,34 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: llm-knative
+  namespace: kourier-system
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`vllm-llm-predictor.llm-system.llm.local`)
+      kind: Rule
+      services:
+        - name: kourier
+          port: 80
+    - match: Host(`vllm-phi2-predictor.llm-system.llm.local`)
+      kind: Rule
+      services:
+        - name: kourier
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: llm-monitoring
+  namespace: monitoring
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`monitoring.llm.local`)
+      kind: Rule
+      services:
+        - name: prometheus-server
+          port: 80

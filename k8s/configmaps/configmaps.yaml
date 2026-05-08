@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-config
+  namespace: llm-system
+data:
+  MODEL_NAME: "microsoft/DialoGPT-small"
+  MAX_MODEL_LEN: "2048"
+  MAX_NUM_BATCHED_TOKENS: "2048"
+  GPU_MEMORY_UTILIZATION: "0.85"
+  LOG_LEVEL: "INFO"
+  REDIS_HOST: "redis-cache"
+  REDIS_PORT: "6379"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: llm-system
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    port 6379
+    protected-mode no
+    maxmemory 2gb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    save 60 10000
+    appendonly yes
+    appendfsync everysec
+    loglevel notice
+    tcp-keepalive 300
+    timeout 300
+    notify-keyspace-events Ex
+    maxclients 1000
+    hash-max-ziplist-entries 512
+    hash-max-ziplist-value 64
+    list-max-ziplist-size -2
+    set-max-intset-entries 512
+    zset-max-ziplist-entries 128
+    zset-max-ziplist-value 64

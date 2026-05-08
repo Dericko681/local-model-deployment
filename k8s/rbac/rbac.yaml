@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-serviceaccount
+  namespace: llm-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-role
+  namespace: llm-system
+rules:
+- apiGroups: [""]
+  resources: ["endpoints", "pods", "services"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-rolebinding
+  namespace: llm-system
+subjects:
+- kind: ServiceAccount
+  name: llm-serviceaccount
+  namespace: llm-system
+roleRef:
+  kind: Role
+  name: llm-role
+  apiGroup: rbac.authorization.k8s.io

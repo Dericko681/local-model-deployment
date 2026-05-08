@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-deployment
+  namespace: llm-system
+  labels:
+    app: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: llm-serviceaccount
+      containers:
+        - name: vllm
+          image: substratusai/vllm:main-cpu
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--model"
+            - "microsoft/phi-2"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--device"
+            - "cpu"
+            - "--dtype"
+            - "float32"
+            - "--max-model-len"
+            - "2048"
+            - "--chat-template"
+            - "/etc/vllm/chat_template.jinja"
+          env:
+            - name: HF_HOME
+              value: /hf-cache
+            - name: HF_HUB_DOWNLOAD_TIMEOUT
+              value: "600"
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "4"
+              memory: "8Gi"
+            limits:
+              cpu: "8"
+              memory: "16Gi"
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /hf-cache
+            - name: chat-template
+              mountPath: /etc/vllm/chat_template.jinja
+              subPath: chat_template.jinja
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 240
+            periodSeconds: 30
+            timeoutSeconds: 5
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /home/derick/.cache/huggingface
+            type: Directory
+        - name: chat-template
+          configMap:
+            name: phi2-chat-template
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: llm-system
+  labels:
+    app: vllm
+spec:
+  selector:
+    app: vllm
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP

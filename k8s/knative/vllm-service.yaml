@@ -1,0 +1,54 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: vllm-llm
+  namespace: llm-system
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/target: "1"
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "2"
+    spec:
+      serviceAccountName: llm-serviceaccount
+      containers:
+        - name: vllm
+          image: substratusai/vllm:main-cpu
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--model"
+            - "microsoft/DialoGPT-small"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8080"
+            - "--device"
+            - "cpu"
+            - "--dtype"
+            - "float32"
+          env:
+            - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+              value: "1"
+          ports:
+            - containerPort: 8080
+              name: http1
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 180
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 300
+            periodSeconds: 30
