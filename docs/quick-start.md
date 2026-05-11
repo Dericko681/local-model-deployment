@@ -60,4 +60,4 @@ curl -s http://$NODE_IP/v1/chat/completions \
 
 ---
 
-[Full docs →](index.md)
+[Full docs →](getting-started.md)

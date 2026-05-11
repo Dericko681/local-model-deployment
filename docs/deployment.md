@@ -43,27 +43,32 @@ flowchart LR
     DEP --> IR["IngressRoute: llm-ingress"]
 ```
 
-### 1. Update Dependencies
+### Option A: From the published chart repository
 
 ```bash
-helm dependency update charts/model-deployment
-```
+# Add the repo (one-time)
+helm repo add local-model-deployment https://dericko681.github.io/local-model-deployment
+helm repo update
 
-Downloads the `app-template` chart into `charts/model-deployment/charts/`. Run once (or when `Chart.yaml` changes).
-
-### 2. Preview (Optional)
-
-```bash
-helm template model-deployment charts/model-deployment \
+# Deploy
+helm upgrade --install model-deployment local-model-deployment/model-deployment \
   --namespace llm-system \
+  --create-namespace \
   --skip-schema-validation
 ```
 
-Renders templates locally without deploying. Use this to verify YAML output.
-
-### 3. Deploy
+### Option B: From source
 
 ```bash
+# 1. Update Dependencies
+helm dependency update charts/model-deployment
+
+# 2. Preview (Optional)
+helm template model-deployment charts/model-deployment \
+  --namespace llm-system \
+  --skip-schema-validation
+
+# 3. Deploy
 helm upgrade --install model-deployment charts/model-deployment \
   --namespace llm-system \
   --create-namespace \
