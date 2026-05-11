@@ -1,16 +1,23 @@
 .PHONY: help deploy deploy-kserve deploy-domain deploy-phi2 \
         deploy-cache deploy-monitoring \
+        helm-deploy helm-destroy \
         test test-phi2 test-dialogpt logs-phi2 logs-dialogpt \
         clean clean-all status
 
 help:
 	@echo "LLM Production Deployment - vLLM + KServe + Knative"
 	@echo ""
-	@echo "=== Deploy ==="
+	@echo "=== Deploy (kubectl) ==="
 	@echo "  deploy            - Deploy full stack (both models)"
 	@echo "  deploy-kserve     - Deploy DialoGPT-small InferenceService"
 	@echo "  deploy-phi2       - Deploy Phi-2 InferenceService"
 	@echo "  deploy-domain     - Configure Knative domain (llm.local)"
+	@echo ""
+	@echo "=== Deploy (Helm) ==="
+	@echo "  helm-dep-update   - Update Helm dependencies (bjw-s app-template)"
+	@echo "  helm-template     - Render template for validation (dry-run)"
+	@echo "  helm-deploy       - Deploy via Helm chart"
+	@echo "  helm-destroy      - Uninstall Helm release"
 	@echo ""
 	@echo "=== Test ==="
 	@echo "  test              - Test both models via Traefik"
@@ -53,11 +60,38 @@ deploy: base deploy-domain
 	@echo ""
 	@echo "=== DNS Setup ==="
 	@echo "Add to /etc/hosts:"
-	@echo "  192.168.4.35  vllm-llm-predictor.llm-system.llm.local"
+	@echo "  192.168.4.35  vllm-dialogpt-predictor.llm-system.llm.local"
 	@echo "  192.168.4.35  vllm-phi2-predictor.llm-system.llm.local"
 	@echo ""
 	@echo "=== Test ==="
 	@echo "  make test"
+
+# ── Deploy via Helm chart ──
+helm-dep-update:
+	@echo "Updating Helm chart dependencies (bjw-s app-template)..."
+	helm dependency update charts/model-deployment
+
+helm-template:
+	helm template model-deployment charts/model-deployment \
+		--namespace llm-system --skip-schema-validation
+
+helm-deploy: helm-dep-update
+	@echo "Deploying via Helm chart..."
+	helm upgrade --install model-deployment charts/model-deployment \
+		--namespace llm-system --create-namespace --skip-schema-validation
+	@echo "Configuring Knative domain..."
+	-kubectl patch configmap config-domain -n knative-serving \
+		--type merge -p '{"data":{"llm.local":""}}' 2>/dev/null || \
+		echo "Knative config-domain not found."
+	@echo ""
+	@echo "=== DNS Setup ==="
+	@echo "Add to /etc/hosts:"
+	@echo "  <node-ip>  vllm-dialogpt-predictor.llm-system.llm.local"
+	@echo "  <node-ip>  vllm-phi2-predictor.llm-system.llm.local"
+
+helm-destroy:
+	@echo "Removing Helm release..."
+	helm uninstall model-deployment --namespace llm-system
 
 deploy-kserve: base deploy-domain
 	@echo "Deploying DialoGPT-small..."
@@ -97,11 +131,11 @@ test-dialogpt:
 	@echo "=== Testing DialoGPT-small ==="
 	@curl -s -o /dev/null -w "Health: HTTP %{http_code}\n" \
 		http://$(HOST)/health \
-		-H "Host: vllm-llm-predictor.llm-system.llm.local" || \
+		-H "Host: vllm-dialogpt-predictor.llm-system.llm.local" || \
 		echo "Failed. Check: kubectl get revisions -n llm-system"
 	@echo ""
 	@curl -s \
-		-H "Host: vllm-llm-predictor.llm-system.llm.local" \
+		-H "Host: vllm-dialogpt-predictor.llm-system.llm.local" \
 		-H "Content-Type: application/json" \
 		-d '{"model": "microsoft/DialoGPT-small", "messages": [{"role": "user", "content": "Hello, how are you?"}], "max_tokens": 50}' \
 		http://$(HOST)/v1/chat/completions | python3 -m json.tool
@@ -113,7 +147,7 @@ logs-phi2:
 
 logs-dialogpt:
 	@echo "Showing DialoGPT-small vLLM logs..."
-	@kubectl logs -n llm-system -l serving.knative.dev/service=vllm-llm-predictor --tail=100 -c kserve-container 2>/dev/null || \
+	@kubectl logs -n llm-system -l serving.knative.dev/service=vllm-dialogpt-predictor --tail=100 -c kserve-container 2>/dev/null || \
 		echo "No logs found"
 
 status:

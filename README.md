@@ -1,119 +1,56 @@
 # LLM Production Deployment
 
-Production stack for deploying local LLMs using **vLLM**, **KServe**, and **Knative** on a single-node k3s cluster.
-
-## Architecture
-
-```
-Client ──► Traefik (port 80)
-               │
-               ▼
-         Kourier (Envoy)
-               │
-               ▼
-         Queue-Proxy (sidecar)
-               │
-               ▼
-         vLLM (kserve-container)
-```
-
-| Component | Purpose |
-|-----------|---------|
-| **vLLM** | High-throughput LLM inference engine with PagedAttention |
-| **KServe** | Kubernetes-native model serving via InferenceService CRD |
-| **Knative** | Serverless autoscaling, revision management, traffic routing |
-| **Kourier** | Lightweight Knative ingress gateway (Envoy-based) |
-| **Traefik** | Cluster ingress controller (k3s default), routes *.llm.local to Kourier |
-
-## Prerequisites
-
-- k3s cluster v1.25+
-- KServe installed
-- Knative Serving + Kourier installed
-- 8GB+ free RAM per model
+Deploy and serve LLMs (Phi-2, DialoGPT-small) using **vLLM**, **KServe**, and **Knative** on a single-node k3s cluster with an OpenAI-compatible API.
 
 ## Quick Start
 
 ```bash
-# Deploy both models
+# Helm (recommended)
+helm dependency update charts/model-deployment
+helm upgrade --install model-deployment charts/model-deployment \
+  --namespace llm-system --create-namespace --skip-schema-validation
+
+# Or kubectl
 make deploy
 ```
 
-## Models Available
-
-| InferenceService | Model | Params | Best For |
-|:---|---:|:---|:---|
-| `vllm-llm` | microsoft/DialoGPT-small | 117M | Lightweight conversation |
-| `vllm-phi2` | microsoft/phi-2 | 2.7B | Text generation, reasoning, code |
-
-## Usage
-
 ```bash
-curl http://192.168.4.35/v1/chat/completions \
+# Test
+curl -s http://192.168.4.35/v1/chat/completions \
   -H "Host: vllm-phi2-predictor.llm-system.llm.local" \
   -H "Content-Type: application/json" \
   -d '{"model": "microsoft/phi-2", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 50}'
 ```
 
-All endpoints are **OpenAI-compatible**:
-- `POST /v1/chat/completions`
-- `POST /v1/completions`
-- `GET /v1/models`
-- `GET /health`
+## Documentation
 
-## Project Structure
+| Page | Description |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Prerequisites, setup, first deployment |
+| [Architecture](docs/architecture.md) | Request flow, resources, component interaction |
+| [Technologies](docs/technologies.md) | vLLM, KServe, Knative, Traefik explained |
+| [Deployment](docs/deployment.md) | Full guide (kubectl + Helm) |
+| [API Reference](docs/api-reference.md) | Endpoints, parameters, testing |
+| [Configuration](docs/configuration.md) | All `values.yaml` options |
+| [Concepts](docs/concepts.md) | K8s and LLM concepts for beginners |
+| [Glossary](docs/glossary.md) | Terms and definitions |
 
-```
-model-deployment/
-├── Makefile
-├── k8s/
-│   ├── namespaces/namespace.yaml
-│   ├── configmaps/
-│   │   ├── configmaps.yaml
-│   │   └── phi2-chat-template.yaml
-│   ├── secrets/secrets.yaml
-│   ├── rbac/rbac.yaml
-│   ├── storage/storage.yaml
-│   ├── kserve/
-│   │   ├── vllm-inference-service.yaml      # DialoGPT-small
-│   │   └── vllm-phi2-inference-service.yaml  # Phi-2
-│   ├── ingress/
-│   │   └── traefik-ingress.yaml
-│   ├── knative/
-│   │   └── vllm-service.yaml
-│   ├── vllm/
-│   ├── cache/
-│   └── monitoring/
-└── docs/
-    ├── deployment-guide.md
-    └── api-reference.md
+## Models
+
+| InferenceService | Model | Params | Max Tokens |
+|---|---|---|---|
+| `vllm-dialogpt` | microsoft/DialoGPT-small | 117M | 1024 |
+| `vllm-phi2` | microsoft/phi-2 | 2.7B | 2048 |
+
+## Stack
+
+```mermaid
+flowchart LR
+    Client["Client<br/>(curl, app, SDK)"] -->|"HTTP :80<br/>Host: *.llm.local"| T["Traefik<br/>Ingress controller"]
+    T --> K["Kourier<br/>Knative gateway"]
+    K --> QP["queue-proxy<br/>Knative sidecar"]
+    QP --> V["vLLM<br/>Inference engine"]
+    V --> M["Model<br/>Phi-2 / DialoGPT"]
 ```
 
-## DNS Setup
-
-Add to `/etc/hosts` on each machine that needs access:
-
-```
-192.168.4.35  vllm-llm-predictor.llm-system.llm.local
-192.168.4.35  vllm-phi2-predictor.llm-system.llm.local
-```
-
-Then use cleaner URLs:
-
-```bash
-curl http://vllm-phi2-predictor.llm-system.llm.local/v1/chat/completions ...
-```
-
-## Troubleshooting
-
-```bash
-# Pod status
-kubectl get pods -n llm-system
-kubectl describe pod <pod> -n llm-system
-
-# Logs
-make logs-kserve
-
-# Delete everything
-make clean-all
-```
+**Technologies**: vLLM, KServe, Knative, Kourier, Traefik, Helm (bjw-s/app-template)

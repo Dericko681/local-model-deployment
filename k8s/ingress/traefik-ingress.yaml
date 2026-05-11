@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`vllm-llm-predictor.llm-system.llm.local`)
+    - match: Host(`vllm-dialogpt-predictor.llm-system.llm.local`)
       kind: Rule
       services:
         - name: kourier

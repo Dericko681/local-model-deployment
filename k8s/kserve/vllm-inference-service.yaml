@@ -1,7 +1,7 @@
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: vllm-llm
+  name: vllm-dialogpt
   namespace: llm-system
   annotations:
     autoscaling.knative.dev/target: "1"
