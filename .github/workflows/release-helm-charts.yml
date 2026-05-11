@@ -27,6 +27,11 @@ jobs:
         with:
           version: v3.14.0
 
+      - name: Add dependency repos and build
+        run: |
+          helm repo add bjw-s https://bjw-s-labs.github.io/helm-charts
+          helm dependency build charts/model-deployment
+
       - name: Package and release
         uses: helm/chart-releaser-action@v1.7.0
         with:
