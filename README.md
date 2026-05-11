@@ -32,6 +32,7 @@ curl -s http://192.168.4.35/v1/chat/completions \
 | [Deployment](docs/deployment.md) | Full guide (kubectl + Helm) |
 | [API Reference](docs/api-reference.md) | Endpoints, parameters, testing |
 | [Configuration](docs/configuration.md) | All `values.yaml` options |
+| [AI-Ops Integration](docs/ai-ops-integration.md) | Linking vLLM models to Envoy AI Gateway |
 | [Concepts](docs/concepts.md) | K8s and LLM concepts for beginners |
 | [Glossary](docs/glossary.md) | Terms and definitions |
 

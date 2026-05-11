@@ -516,3 +516,4 @@ The principle of **least privilege** is applied: the service account only has re
 - [Learn about each technology](technologies.md) in detail
 - [Deploy the system](deployment.md) step by step
 - [Explore configuration options](configuration.md)
+- [Integrate with AI-Ops (Envoy AI Gateway)](ai-ops-integration.md)

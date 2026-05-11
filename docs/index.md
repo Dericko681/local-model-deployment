@@ -16,6 +16,7 @@ This project provides an **OpenAI-compatible API** for two models:
 | [Deployment](deployment.md) | Full deployment guide (kubectl and Helm) |
 | [API Reference](api-reference.md) | API endpoints, model specs, testing |
 | [Configuration](configuration.md) | All configuration options explained |
+| [AI-Ops Integration](ai-ops-integration.md) | Connecting ML-Ops to Envoy AI Gateway infrastructure |
 | [Concepts](concepts.md) | Kubernetes and LLM concepts for beginners |
 | [Glossary](glossary.md) | Terms and definitions |
 
