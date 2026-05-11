@@ -1,4 +1,4 @@
-# ─ -- Serving infrastructure (bjw-s app-template) ──
+# ─ Serving infrastructure (bjw-s app-template) ──
 serving:
   global:
     nameOverride: model-deployment
