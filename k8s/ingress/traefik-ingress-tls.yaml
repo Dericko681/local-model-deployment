@@ -1,35 +1,21 @@
 apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: redirect-https
-  namespace: kourier-system
-spec:
-  redirectScheme:
-    scheme: https
-    permanent: true
----
-apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: llm-ingress
+  name: llm-ingress-tls
   namespace: kourier-system
 spec:
   entryPoints:
-    - web
+    - websecure
   routes:
     - match: Host(`vllm-phi2-predictor.llm-system.llm.local`)
       kind: Rule
-      middlewares:
-        - name: redirect-https
-          namespace: kourier-system
       services:
         - name: kourier
           port: 80
     - match: Host(`vllm-dialogpt-predictor.llm-system.llm.local`)
       kind: Rule
-      middlewares:
-        - name: redirect-https
-          namespace: kourier-system
       services:
         - name: kourier
           port: 80
+  tls:
+    secretName: llm-tls

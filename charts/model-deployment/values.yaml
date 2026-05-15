@@ -238,7 +238,7 @@ serving:
                 persistentVolumeClaim:
                   claimName: model-cache
 
-    # ── Traefik IngressRoute ──
+    # ── Traefik IngressRoute (HTTP) ──
     traefik-ingress:
       enabled: true
       forceRename: llm-ingress
@@ -316,3 +316,5 @@ serving:
       service: kourier
       namespace: kourier-system
       port: 80
+
+  # TLS is managed via `make deploy-tls` (k8s/tls/ + k8s/ingress/traefik-ingress*.yaml)

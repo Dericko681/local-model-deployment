@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: llm-tls-cert
+  namespace: kourier-system
+spec:
+  secretName: llm-tls
+  commonName: "*.llm.local"
+  dnsNames:
+    - "*.llm.local"
+    - "*.llm-system.llm.local"
+    - "vllm-phi2-predictor.llm-system.llm.local"
+    - "vllm-dialogpt-predictor.llm-system.llm.local"
+  issuerRef:
+    name: llm-selfsigned-issuer
+    kind: ClusterIssuer
