@@ -108,7 +108,8 @@ serving:
                   - name: VLLM_CPU_KVCACHE_SPACE
                     value: "{{ .Values.vllm.env.VLLM_CPU_KVCACHE_SPACE }}"
                 ports:
-                  - containerPort: "{{ .Values.vllm.server.port }}"
+                  # containerPort must be a literal integer (YAML quotes around {{ }} produce strings)
+                  - containerPort: 8080
                     name: "{{ .Values.vllm.server.portName }}"
                     protocol: TCP
                 resources:
@@ -127,7 +128,7 @@ serving:
                 startupProbe:
                   httpGet:
                     path: /health
-                    port: "{{ .Values.vllm.server.port }}"
+                    port: 8080
                   initialDelaySeconds: 10
                   periodSeconds: 30
                   failureThreshold: 60
@@ -135,14 +136,14 @@ serving:
                 readinessProbe:
                   httpGet:
                     path: /health
-                    port: "{{ .Values.vllm.server.port }}"
+                    port: 8080
                   initialDelaySeconds: 10
                   periodSeconds: 10
                   timeoutSeconds: 5
                 livenessProbe:
                   httpGet:
                     path: /health
-                    port: "{{ .Values.vllm.server.port }}"
+                    port: 8080
                   initialDelaySeconds: 300
                   periodSeconds: 30
                   timeoutSeconds: 5
