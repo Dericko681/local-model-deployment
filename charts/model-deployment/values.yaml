@@ -1,26 +1,9 @@
-# =============================================================================
-# Model Deployment Helm Chart - Production Values
-# =============================================================================
-# This chart deploys a vLLM inference service using KServe/Knative
-# Configuration is organized into logical sections for easy customization
-
-# =============================================================================
-# GLOBAL SETTINGS
-# =============================================================================
 serving:
   global:
     nameOverride: model-deployment
     createDefaultServiceAccount: false
 
-  # ServiceAccount configuration
-  # Default: disabled (uses namespace default service account)
-  serviceAccount:
-    main:
-      enabled: false
-
-  # =============================================================================
-  # CONFIGMAPS - Chat templates and configuration
-  # =============================================================================
+ 
   configMaps:
     phi2-chat-template:
       enabled: true
@@ -40,9 +23,6 @@ serving:
           Assistant:
           {% endif %}
 
-  # =============================================================================
-  # PERSISTENT STORAGE - HuggingFace model cache
-  # =============================================================================
   persistence:
     model-cache:
       enabled: true
@@ -53,31 +33,14 @@ serving:
       retain: true
       storageClass: ""
 
-  # =============================================================================
-  # MODEL CONFIGURATION
-  # =============================================================================
-  # Define models as a map for easy reference and extensibility
-  # Each model can have its own configuration
   models:
     phi2:
-      # Model identification
-      name: phi2
       inferenceService: vllm-phi2
-      
-      # HuggingFace model configuration
-      huggingface:
-        repository: microsoft/phi-2
-        revision: ""
-        token: ""  # Set if using private models
-      
-      # Model runtime configuration
-      runtime:
-        maxModelLen: 2048
-        dtype: float32
-        device: cpu
-        chatTemplate: /chat-template/chat_template.jinja
-      
-      # Resource allocation
+      repository: microsoft/phi-2
+      maxModelLen: 2048
+      device: cpu
+      dtype: float32
+      chatTemplate: /chat-template/chat_template.jinja
       resources:
         requests:
           cpu: "4"
@@ -85,117 +48,31 @@ serving:
         limits:
           cpu: "8"
           memory: 16Gi
-      
-      # Autoscaling configuration (Knative)
       autoscaling:
         minScale: 1
         maxScale: 3
-        target: 1  # Concurrency target
-      
-      # Probes configuration
-      probes:
-        startup:
-          enabled: true
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 30
-          failureThreshold: 60
-          timeoutSeconds: 5
-        readiness:
-          enabled: true
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-        liveness:
-          enabled: true
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 300
-          periodSeconds: 30
-          timeoutSeconds: 5
+        target: 1
 
-  # =============================================================================
-  # VLLM RUNTIME CONFIGURATION
-  # =============================================================================
   vllm:
-    # Container image configuration
     image:
       repository: substratusai/vllm
       tag: main-cpu
       pullPolicy: IfNotPresent
-    
-    # Server configuration
     server:
       host: 0.0.0.0
       port: 8080
       portName: http1
-    
-    # Runtime arguments
-    args:
-      device: cpu
-      dtype: float32
-    
-    # Environment variables as a map
     env:
       HF_HOME: /hf-cache
       HF_HUB_DOWNLOAD_TIMEOUT: "600"
       VLLM_CPU_KVCACHE_SPACE: "4"
-      # Additional environment variables can be added here
-      # HF_TOKEN: ""  # Uncomment if needed for private models
-      # TRANSFORMERS_CACHE: ""
-    
-    # Security context (optional)
-    securityContext: {}
-    #   runAsNonRoot: true
-    #   runAsUser: 1000
-    #   readOnlyRootFilesystem: true
-    
-    # Pod security context (optional)
-    podSecurityContext: {}
-    #   fsGroup: 1000
-    
-    # Node affinity (optional)
-    affinity: {}
-    #   nodeAffinity:
-    #     requiredDuringSchedulingIgnoredDuringExecution:
-    #       nodeSelectorTerms:
-    #       - matchExpressions:
-    #         - key: kubernetes.io/arch
-    #           operator: In
-    #           values:
-    #           - amd64
-    
-    # Node selector (optional)
-    nodeSelector: {}
-    #   kubernetes.io/os: linux
-    
-    # Tolerations (optional)
-    tolerations: []
-    #   - key: "nvidia.com/gpu"
-    #     operator: "Exists"
-    #     effect: "NoSchedule"
 
-  # =============================================================================
-  # KNATIVE/GATEWAY CONFIGURATION
-  # =============================================================================
   knative:
     gateway:
       service: kourier
       namespace: kourier-system
       port: 80
 
-  # =============================================================================
-  # RAW RESOURCES - KServe InferenceService
-  # =============================================================================
-  # Note: Within app-template, .Values refers to the serving: section
-  # Using hardcoded values for rawResources spec to avoid YAML parsing issues
-  # with template expressions in YAML objects
   rawResources:
     phi2:
       enabled: true
@@ -203,9 +80,9 @@ serving:
       apiVersion: serving.kserve.io/v1beta1
       kind: InferenceService
       annotations:
-        autoscaling.knative.dev/minScale: "1"
-        autoscaling.knative.dev/maxScale: "3"
-        autoscaling.knative.dev/target: "1"
+        autoscaling.knative.dev/minScale: "{{ .Values.models.phi2.autoscaling.minScale }}"
+        autoscaling.knative.dev/maxScale: "{{ .Values.models.phi2.autoscaling.maxScale }}"
+        autoscaling.knative.dev/target: "{{ .Values.models.phi2.autoscaling.target }}"
       labels:
         app: vllm-phi2
       spec:
@@ -213,34 +90,34 @@ serving:
           predictor:
             containers:
               - name: kserve-container
-                image: substratusai/vllm:main-cpu
-                imagePullPolicy: IfNotPresent
+                image: "{{ .Values.vllm.image.repository }}:{{ .Values.vllm.image.tag }}"
+                imagePullPolicy: "{{ .Values.vllm.image.pullPolicy }}"
                 args:
-                  - --host=0.0.0.0
-                  - --port=8080
-                  - --model=microsoft/phi-2
-                  - --max-model-len=2048
-                  - --device=cpu
-                  - --dtype=float32
-                  - --chat-template=/chat-template/chat_template.jinja
+                  - "--host={{ .Values.vllm.server.host }}"
+                  - "--port={{ .Values.vllm.server.port }}"
+                  - "--model={{ .Values.models.phi2.repository }}"
+                  - "--max-model-len={{ .Values.models.phi2.maxModelLen }}"
+                  - "--device={{ .Values.models.phi2.device }}"
+                  - "--dtype={{ .Values.models.phi2.dtype }}"
+                  - "--chat-template={{ .Values.models.phi2.chatTemplate }}"
                 env:
                   - name: HF_HOME
-                    value: /hf-cache
+                    value: "{{ .Values.vllm.env.HF_HOME }}"
                   - name: HF_HUB_DOWNLOAD_TIMEOUT
-                    value: "600"
+                    value: "{{ .Values.vllm.env.HF_HUB_DOWNLOAD_TIMEOUT }}"
                   - name: VLLM_CPU_KVCACHE_SPACE
-                    value: "4"
+                    value: "{{ .Values.vllm.env.VLLM_CPU_KVCACHE_SPACE }}"
                 ports:
-                  - containerPort: 8080
-                    name: http1
+                  - containerPort: "{{ .Values.vllm.server.port }}"
+                    name: "{{ .Values.vllm.server.portName }}"
                     protocol: TCP
                 resources:
                   requests:
-                    cpu: "4"
-                    memory: 8Gi
+                    cpu: "{{ .Values.models.phi2.resources.requests.cpu }}"
+                    memory: "{{ .Values.models.phi2.resources.requests.memory }}"
                   limits:
-                    cpu: "8"
-                    memory: 16Gi
+                    cpu: "{{ .Values.models.phi2.resources.limits.cpu }}"
+                    memory: "{{ .Values.models.phi2.resources.limits.memory }}"
                 volumeMounts:
                   - name: hf-cache
                     mountPath: /hf-cache
@@ -250,7 +127,7 @@ serving:
                 startupProbe:
                   httpGet:
                     path: /health
-                    port: 8080
+                    port: "{{ .Values.vllm.server.port }}"
                   initialDelaySeconds: 10
                   periodSeconds: 30
                   failureThreshold: 60
@@ -258,14 +135,14 @@ serving:
                 readinessProbe:
                   httpGet:
                     path: /health
-                    port: 8080
+                    port: "{{ .Values.vllm.server.port }}"
                   initialDelaySeconds: 10
                   periodSeconds: 10
                   timeoutSeconds: 5
                 livenessProbe:
                   httpGet:
                     path: /health
-                    port: 8080
+                    port: "{{ .Values.vllm.server.port }}"
                   initialDelaySeconds: 300
                   periodSeconds: 30
                   timeoutSeconds: 5
