@@ -3,7 +3,6 @@ serving:
     nameOverride: model-deployment
     createDefaultServiceAccount: false
 
- 
   configMaps:
     phi2-chat-template:
       enabled: true
@@ -33,124 +32,110 @@ serving:
       retain: true
       storageClass: ""
 
-  models:
-    phi2:
-      inferenceService: vllm-phi2
-      repository: microsoft/phi-2
-      maxModelLen: 2048
-      device: cpu
-      dtype: float32
-      chatTemplate: /chat-template/chat_template.jinja
-      resources:
-        requests:
-          cpu: "4"
-          memory: 8Gi
-        limits:
-          cpu: "8"
-          memory: 16Gi
-      autoscaling:
-        minScale: 1
-        maxScale: 3
-        target: 1
+servingRuntimes:
+  vllm-cpu:
+    enabled: true
+    annotations: {}
+    labels: {}
+    spec:
+      multiModel: false
+      disabled: false
+      supportedModelFormats:
+        - name: huggingface
+          version: "1"
+          autoSelect: true
+          priority: 1
+      protocolVersions:
+        - v1
+      containers:
+        kserve-container:
+          image:
+            repository: substratusai/vllm
+            tag: main-cpu
+            pullPolicy: IfNotPresent
+          ports:
+            http1:
+              containerPort: 8080
+              protocol: TCP
+          env:
+            HF_HOME: /hf-cache
+            HF_HUB_DOWNLOAD_TIMEOUT: "600"
+            VLLM_CPU_KVCACHE_SPACE: "4"
+          resources: {}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 60
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 5
+          volumeMounts:
+            model-cache:
+              mountPath: /hf-cache
+      nodeSelector: {}
+      tolerations: []
+      affinity: {}
 
-  vllm:
-    image:
-      repository: substratusai/vllm
-      tag: main-cpu
-      pullPolicy: IfNotPresent
-    server:
-      host: 0.0.0.0
-      port: 8080
-      portName: http1
-    env:
-      HF_HOME: /hf-cache
-      HF_HUB_DOWNLOAD_TIMEOUT: "600"
-      VLLM_CPU_KVCACHE_SPACE: "4"
-
-  knative:
-    gateway:
-      service: kourier
-      namespace: kourier-system
-      port: 80
-
-  rawResources:
-    phi2:
-      enabled: true
-      forceRename: vllm-phi2
-      apiVersion: serving.kserve.io/v1beta1
-      kind: InferenceService
-      annotations:
-        autoscaling.knative.dev/minScale: "{{ .Values.models.phi2.autoscaling.minScale }}"
-        autoscaling.knative.dev/maxScale: "{{ .Values.models.phi2.autoscaling.maxScale }}"
-        autoscaling.knative.dev/target: "{{ .Values.models.phi2.autoscaling.target }}"
-      labels:
-        app: vllm-phi2
-      spec:
-        spec:
-          predictor:
-            containers:
-              - name: kserve-container
-                image: "{{ .Values.vllm.image.repository }}:{{ .Values.vllm.image.tag }}"
-                imagePullPolicy: "{{ .Values.vllm.image.pullPolicy }}"
-                args:
-                  - "--host={{ .Values.vllm.server.host }}"
-                  - "--port={{ .Values.vllm.server.port }}"
-                  - "--model={{ .Values.models.phi2.repository }}"
-                  - "--max-model-len={{ .Values.models.phi2.maxModelLen }}"
-                  - "--device={{ .Values.models.phi2.device }}"
-                  - "--dtype={{ .Values.models.phi2.dtype }}"
-                  - "--chat-template={{ .Values.models.phi2.chatTemplate }}"
-                env:
-                  - name: HF_HOME
-                    value: "{{ .Values.vllm.env.HF_HOME }}"
-                  - name: HF_HUB_DOWNLOAD_TIMEOUT
-                    value: "{{ .Values.vllm.env.HF_HUB_DOWNLOAD_TIMEOUT }}"
-                  - name: VLLM_CPU_KVCACHE_SPACE
-                    value: "{{ .Values.vllm.env.VLLM_CPU_KVCACHE_SPACE }}"
-                ports:
-                  # containerPort must be a literal integer (YAML quotes around {{ }} produce strings)
-                  - containerPort: 8080
-                    name: "{{ .Values.vllm.server.portName }}"
-                    protocol: TCP
-                resources:
-                  requests:
-                    cpu: "{{ .Values.models.phi2.resources.requests.cpu }}"
-                    memory: "{{ .Values.models.phi2.resources.requests.memory }}"
-                  limits:
-                    cpu: "{{ .Values.models.phi2.resources.limits.cpu }}"
-                    memory: "{{ .Values.models.phi2.resources.limits.memory }}"
-                volumeMounts:
-                  - name: hf-cache
-                    mountPath: /hf-cache
-                  - name: chat-template
-                    mountPath: /chat-template
-                    readOnly: true
-                startupProbe:
-                  httpGet:
-                    path: /health
-                    port: 8080
-                  initialDelaySeconds: 10
-                  periodSeconds: 30
-                  failureThreshold: 60
-                  timeoutSeconds: 5
-                readinessProbe:
-                  httpGet:
-                    path: /health
-                    port: 8080
-                  initialDelaySeconds: 10
-                  periodSeconds: 10
-                  timeoutSeconds: 5
-                livenessProbe:
-                  httpGet:
-                    path: /health
-                    port: 8080
-                  initialDelaySeconds: 300
-                  periodSeconds: 30
-                  timeoutSeconds: 5
-            volumes:
-              - name: hf-cache
-                persistentVolumeClaim:
-                  claimName: model-cache
-              - name: chat-template
-                configMap:
-                  name: phi2-chat-template
+inferenceServices:
+  phi2:
+    enabled: true
+    name: vllm-phi2
+    annotations:
+      autoscaling.knative.dev/minScale: "1"
+      autoscaling.knative.dev/maxScale: "3"
+      autoscaling.knative.dev/target: "1"
+    labels:
+      app: vllm-phi2
+    spec:
+      predictor:
+        minReplicas: 1
+        maxReplicas: 3
+        timeout: 300
+        scaleMetric: concurrency
+        scaleTarget: 1
+        model:
+          modelFormat:
+            name: huggingface
+          runtime: vllm-cpu
+          storageUri: hf://microsoft/phi-2
+          args:
+            host: 0.0.0.0
+            port: "8080"
+            model: microsoft/phi-2
+            max-model-len: "2048"
+            device: cpu
+            dtype: float32
+            chat-template: /chat-template/chat_template.jinja
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi
+            limits:
+              cpu: "8"
+              memory: 16Gi
+          volumeMounts:
+            chat-template:
+              mountPath: /chat-template
+              readOnly: true
+        volumes:
+          chat-template:
+            configMap:
+              name: phi2-chat-template
+          model-cache:
+            persistentVolumeClaim:
+              claimName: model-cache

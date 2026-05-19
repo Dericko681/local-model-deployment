@@ -1,0 +1,172 @@
+{{- range $name, $sr := .Values.servingRuntimes }}
+{{- if $sr.enabled }}
+---
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  {{- with $sr.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $sr.labels }}
+  labels:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  {{- if hasKey $sr.spec "multiModel" }}
+  multiModel: {{ $sr.spec.multiModel }}
+  {{- end }}
+  {{- if hasKey $sr.spec "disabled" }}
+  disabled: {{ $sr.spec.disabled }}
+  {{- end }}
+  {{- with $sr.spec.protocolVersions }}
+  protocolVersions:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $sr.spec.supportedModelFormats }}
+  supportedModelFormats:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $sr.spec.containers }}
+  containers:
+{{- range $cName, $container := . }}
+    - name: {{ $cName }}
+      {{- with $container.image }}
+      image: {{ .repository }}:{{ .tag }}
+      imagePullPolicy: {{ .pullPolicy | default "IfNotPresent" }}
+      {{- end }}
+      {{- with $container.command }}
+      command:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with $container.args }}
+      args:
+{{ include "helpers.mapToArgs" . | indent 8 }}
+      {{- end }}
+      {{- with $container.ports }}
+      ports:
+{{ include "helpers.portsFromMap" . | indent 8 }}
+      {{- end }}
+      {{- with $container.env }}
+      env:
+{{ include "helpers.envFromMap" . | indent 8 }}
+      {{- end }}
+      {{- with $container.envFrom }}
+      envFrom:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with $container.resources }}
+      resources:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with $container.volumeMounts }}
+      volumeMounts:
+{{ include "helpers.volumeMountsFromMap" . | indent 8 }}
+      {{- end }}
+      {{- with $container.startupProbe }}
+      startupProbe:
+{{ include "helpers.probeSpec" . | indent 8 }}
+      {{- end }}
+      {{- with $container.readinessProbe }}
+      readinessProbe:
+{{ include "helpers.probeSpec" . | indent 8 }}
+      {{- end }}
+      {{- with $container.livenessProbe }}
+      livenessProbe:
+{{ include "helpers.probeSpec" . | indent 8 }}
+      {{- end }}
+      {{- with $container.lifecycle }}
+      lifecycle:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with $container.securityContext }}
+      securityContext:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with $container.workingDir }}
+      workingDir: {{ . }}
+      {{- end }}
+{{- end }}
+  {{- end }}
+  {{- with $sr.spec.nodeSelector }}
+  nodeSelector:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $sr.spec.tolerations }}
+  tolerations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $sr.spec.affinity }}
+  affinity:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $sr.spec.storageHelper }}
+  storageHelper:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $sr.spec.builtInAdapter }}
+  builtInAdapter:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- if $sr.spec.replicas }}
+  replicas: {{ $sr.spec.replicas }}
+  {{- end }}
+  {{- with $sr.spec.workerSpec }}
+  workerSpec:
+    {{- if hasKey . "replicas" }}
+    replicas: {{ .replicas }}
+    {{- end }}
+    {{- with .podSpec }}
+    podSpec:
+      {{- with .containers }}
+      containers:
+{{- range $cName, $container := . }}
+      - name: {{ $cName }}
+        {{- with $container.image }}
+        image: {{ .repository }}:{{ .tag }}
+        imagePullPolicy: {{ .pullPolicy | default "IfNotPresent" }}
+        {{- end }}
+        {{- with $container.command }}
+        command:
+{{ toYaml . | indent 10 }}
+        {{- end }}
+        {{- with $container.args }}
+        args:
+{{ include "helpers.mapToArgs" . | indent 10 }}
+        {{- end }}
+        {{- with $container.ports }}
+        ports:
+{{ include "helpers.portsFromMap" . | indent 10 }}
+        {{- end }}
+        {{- with $container.env }}
+        env:
+{{ include "helpers.envFromMap" . | indent 10 }}
+        {{- end }}
+        {{- with $container.resources }}
+        resources:
+{{ toYaml . | indent 10 }}
+        {{- end }}
+        {{- with $container.volumeMounts }}
+        volumeMounts:
+{{ include "helpers.volumeMountsFromMap" . | indent 10 }}
+        {{- end }}
+{{- end }}
+      {{- end }}
+      {{- with .nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

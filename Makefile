@@ -16,6 +16,7 @@ help:
 	@echo "  deploy-tls        - Deploy TLS (ClusterIssuer + Certificate + HTTPS IngressRoute)"
 	@echo ""
 	@echo "=== Deploy (Helm) ==="
+	@echo "  helm-lint         - Lint Helm chart"
 	@echo "  helm-dep-update   - Update Helm dependencies (bjw-s app-template)"
 	@echo "  helm-template     - Render template for validation (dry-run)"
 	@echo "  helm-deploy       - Deploy via Helm chart"
@@ -74,11 +75,14 @@ helm-dep-update:
 	@echo "Updating Helm chart dependencies (bjw-s app-template)..."
 	helm dependency update charts/model-deployment
 
+helm-lint:
+	helm lint charts/model-deployment
+
 helm-template:
 	helm template model-deployment charts/model-deployment \
 		--namespace llm-system --skip-schema-validation
 
-helm-deploy: helm-dep-update
+helm-deploy: helm-lint helm-dep-update
 	@echo "Deploying via Helm chart..."
 	helm upgrade --install model-deployment charts/model-deployment \
 		--namespace llm-system --create-namespace --skip-schema-validation
@@ -211,7 +215,8 @@ status:
 	kubectl get pods -n llm-system
 
 clean:
-	@echo "Removing KServe + Ingress resources..."
+	@echo "Removing Helm release and KServe + Ingress resources..."
+	-helm uninstall model-deployment --namespace llm-system 2>/dev/null || echo "No Helm release found"
 	-kubectl delete -f k8s/ingress/traefik-ingress.yaml --ignore-not-found=true
 	-kubectl delete -f k8s/kserve/vllm-inference-service.yaml --ignore-not-found=true
 	-kubectl delete -f k8s/kserve/vllm-phi2-inference-service.yaml --ignore-not-found=true

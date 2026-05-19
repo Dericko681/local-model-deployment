@@ -1,0 +1,96 @@
+{{- range $name, $isvc := .Values.inferenceServices }}
+{{- if $isvc.enabled }}
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: {{ $isvc.name | default $name }}
+  namespace: {{ $.Release.Namespace }}
+  {{- with $isvc.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- with $isvc.labels }}
+  labels:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  predictor:
+    {{- if hasKey $isvc.spec.predictor "serviceAccountName" }}
+    serviceAccountName: {{ $isvc.spec.predictor.serviceAccountName }}
+    {{- end }}
+    {{- if hasKey $isvc.spec.predictor "minReplicas" }}
+    minReplicas: {{ $isvc.spec.predictor.minReplicas }}
+    {{- end }}
+    {{- if hasKey $isvc.spec.predictor "maxReplicas" }}
+    maxReplicas: {{ $isvc.spec.predictor.maxReplicas }}
+    {{- end }}
+    {{- if hasKey $isvc.spec.predictor "timeout" }}
+    timeout: {{ $isvc.spec.predictor.timeout }}
+    {{- end }}
+    {{- if hasKey $isvc.spec.predictor "scaleMetric" }}
+    scaleMetric: {{ $isvc.spec.predictor.scaleMetric }}
+    {{- end }}
+    {{- if hasKey $isvc.spec.predictor "scaleTarget" }}
+    scaleTarget: {{ $isvc.spec.predictor.scaleTarget }}
+    {{- end }}
+    {{- with $isvc.spec.predictor.model }}
+    model:
+      modelFormat:
+        name: {{ .modelFormat.name }}
+        {{- with .modelFormat.version }}
+        version: {{ . }}
+        {{- end }}
+      {{- with .runtime }}
+      runtime: {{ . }}
+      {{- end }}
+      {{- with .storageUri }}
+      storageUri: {{ . }}
+      {{- end }}
+      {{- with .args }}
+      args:
+{{ include "helpers.mapToArgs" . | indent 8 }}
+      {{- end }}
+      {{- with .env }}
+      env:
+{{ include "helpers.envFromMap" . | indent 8 }}
+      {{- end }}
+      {{- with .resources }}
+      resources:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .volumeMounts }}
+      volumeMounts:
+{{ include "helpers.volumeMountsFromMap" . | indent 8 }}
+      {{- end }}
+      {{- if .readinessProbe }}
+      readinessProbe:
+{{ include "helpers.probeSpec" .readinessProbe | indent 8 }}
+      {{- end }}
+      {{- if .livenessProbe }}
+      livenessProbe:
+{{ include "helpers.probeSpec" .livenessProbe | indent 8 }}
+      {{- end }}
+      {{- if .startupProbe }}
+      startupProbe:
+{{ include "helpers.probeSpec" .startupProbe | indent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- with $isvc.spec.predictor.volumes }}
+    volumes:
+{{ include "helpers.volumesFromMap" . | indent 6 }}
+    {{- end }}
+    {{- with $isvc.spec.predictor.nodeSelector }}
+    nodeSelector:
+{{ toYaml . | indent 6 }}
+    {{- end }}
+    {{- with $isvc.spec.predictor.tolerations }}
+    tolerations:
+{{ toYaml . | indent 6 }}
+    {{- end }}
+    {{- if $isvc.spec.predictor.affinity }}
+    affinity:
+{{ toYaml $isvc.spec.predictor.affinity | indent 6 }}
+    {{- end }}
+{{- end }}
+{{- end }}
