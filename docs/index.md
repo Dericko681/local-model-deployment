@@ -2,9 +2,7 @@
 
 Deploy and serve Large Language Models (LLMs) on a Kubernetes cluster using vLLM, KServe, and Knative.
 
-This project provides an **OpenAI-compatible API** for two models:
-- [microsoft/phi-2](https://huggingface.co/microsoft/phi-2) (2.7B parameters)
-- [microsoft/DialoGPT-small](https://huggingface.co/microsoft/DialoGPT-small) (117M parameters)
+This project provides an **OpenAI-compatible API** for models defined in the Helm chart's `inferenceServices` configuration.
 
 ## Quick Links
 
@@ -13,7 +11,7 @@ This project provides an **OpenAI-compatible API** for two models:
 | [Getting Started](getting-started.md) | Prerequisites, setup, and first deployment |
 | [Architecture](architecture.md) | How the system works, request flow, all resources explained |
 | [Technologies](technologies.md) | Deep dive into each technology and why it is used |
-| [Deployment](deployment.md) | Full deployment guide (kubectl and Helm) |
+| [Deployment](deployment.md) | Full deployment guide (Helm) |
 | [API Reference](api-reference.md) | API endpoints, model specs, testing |
 | [Configuration](configuration.md) | All configuration options explained |
 | [AI-Ops Integration](ai-ops-integration.md) | Connecting ML-Ops to Envoy AI Gateway infrastructure |
@@ -25,41 +23,43 @@ This project provides an **OpenAI-compatible API** for two models:
 ```mermaid
 flowchart LR
     C["Client<br/>(curl, app, SDK)"]
-    T["Traefik<br/>Ingress controller"]
     K["Kourier<br/>Knative gateway"]
     QP["queue-proxy<br/>Knative sidecar"]
     V["vLLM<br/>Inference engine"]
 
-    C -->|"Host: *.llm.local"| T
-    T -->|"routes by hostname"| K
+    C -->|"routes by hostname"| K
     K -->|"routes to correct revision"| QP
     QP -->|"concurrency, metrics"| V
-    V -->|"runs the model"| M["Phi-2 / DialoGPT"]
+    V -->|"runs the model"| M["LLM Model"]
 ```
 
 ## Resources Deployed
 
-The Helm chart creates these 10 Kubernetes resources:
+The Helm chart creates these resource categories:
 
-| # | Kind | Name | Purpose |
+| # | Kind | Provider | Purpose |
 |---|---|---|---|
-| 1 | `ServiceAccount` | `llm-serviceaccount` | Identity for model pods |
-| 2 | `Secret` | `llm-secrets` | Redis password + HuggingFace token |
-| 3 | `ConfigMap` | `llm-config` | General LLM configuration |
-| 4 | `ConfigMap` | `phi2-chat-template` | Phi-2 chat template (Jinja2) |
-| 5 | `PersistentVolumeClaim` | `model-cache` | 10 GB cache for model weights |
-| 6 | `Role` | `llm-role` | Permissions: read pods, endpoints, services |
-| 7 | `RoleBinding` | `llm-binding` | Binds `llm-role` to `llm-serviceaccount` |
-| 8 | `InferenceService` | `vllm-phi2` | Phi-2 model deployment |
-| 9 | `InferenceService` | `vllm-dialogpt` | DialoGPT model deployment |
-| 10 | `IngressRoute` | `llm-ingress` | Traefik routing rules |
+| 1 | `ConfigMap` | bjw-s (native) | Phi-2 chat template (Jinja2) |
+| 2 | `PersistentVolumeClaim` | bjw-s (native) | Model weight cache |
+| 3 | `ClusterRole`/`ClusterRoleBinding` | bjw-s (native) | cert-manager RBAC |
+| 4 | `ConfigMap` | Custom template | Knative cert-manager config |
+| 5 | `ConfigMap` | Custom template | CA trust bundle (knative-serving, kourier-system) |
+| 6 | `ClusterIssuer`/`Certificate` | Custom template | Optional local CA bootstrap |
+| 7 | `ServingRuntime` | Custom template | vLLM runtime definition |
+| 8 | `InferenceService` | Custom template | Model deployment |
+| 9 | `NetworkPolicy` | bjw-s (native) | Security rules (optional) |
+| 10 | `PodDisruptionBudget` | bjw-s (rawResource) | HA (optional) |
+| 11 | `PriorityClass` | bjw-s (rawResource) | Workload scheduling (optional) |
+| 12 | `ServiceMonitor` | bjw-s (native) | Prometheus scraping (optional, requires CRDs) |
+| 13 | `PrometheusRule` | bjw-s (rawResource) | Alerting rules (optional, requires CRDs) |
 
 See [Architecture → Resources](architecture.md#resources-deployed) for details on each.
 
 ## What This Project Does
 
-1. Takes a HuggingFace model (Phi-2 or DialoGPT-small)
+1. Takes a HuggingFace model (configurable via `inferenceServices`)
 2. Wraps it in a vLLM inference engine that provides an OpenAI-compatible API
-3. Deploys it on Kubernetes using KServe (for model orchestration) and Knative (for autoscaling)
-4. Routes traffic through Traefik (ingress) and Kourier (Knative gateway)
-5. Provides health checks, probes, and resource limits for production readiness
+3. Deploys it on Kubernetes using KServe (model orchestration) and Knative (autoscaling)
+4. Routes traffic through Kourier (Knative gateway)
+5. Manages TLS certificates via cert-manager (optional)
+6. Provides observability via Prometheus scraping, OTel, and autoscaling metrics (optional)

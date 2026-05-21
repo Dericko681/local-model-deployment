@@ -22,25 +22,7 @@ vLLM solves this with **PagedAttention** — a memory management technique borro
 
 ### How we use it
 
-```bash
-# The vLLM engine runs as the kserve-container in each predictor pod
-vllm serve microsoft/phi-2 \
-  --host 0.0.0.0 \
-  --port 8080 \
-  --device cpu \
-  --dtype float32 \
-  --max-model-len 2048
-```
-
-Configuration reference:
-
-| Flag | Our Value | Meaning |
-|---|---|---|
-| `--host` | `0.0.0.0` | Listen on all network interfaces |
-| `--port` | `8080` | Container port (matches what KServe expects) |
-| `--device` | `cpu` | Run on CPU (no GPU required) |
-| `--dtype` | `float32` | 32-bit floating point precision |
-| `--max-model-len` | `2048` (phi2) / `1024` (dialogpt) | Maximum sequence length |
+The vLLM engine runs as the `kserve-container` in the predictor pod, configured via the `ServingRuntime` CRD.
 
 ### Image
 
@@ -56,57 +38,35 @@ We use `substratusai/vllm:main-cpu` — a community build optimized for CPU infe
 
 ### Why KServe?
 
-Deploying an LLM manually requires creating multiple Kubernetes resources: a Deployment, Service, ConfigMap, HorizontalPodAutoscaler, etc. KServe simplifies this with a single resource — the **InferenceService** — that generates all the underlying resources automatically.
+Deploying an LLM manually requires creating multiple Kubernetes resources. KServe simplifies this with two resources:
+
+- **ServingRuntime** — Defines the runtime container (vLLM image, args, probes)
+- **InferenceService** — Defines the model deployment (which runtime, which model, autoscaling)
 
 When you create an InferenceService, KServe:
-
 1. Creates a **Knative Service** (which creates a Revision, which creates a Deployment)
 2. Sets up the **predictor pod** with the model container
 3. Configures **autoscaling** via Knative
 4. Manages **rolling updates** when the model configuration changes
 5. Provides **health checking** and readiness gates
 
-### How KServe works under the hood
-
-```mermaid
-flowchart LR
-    IS["InferenceService<br/>serving.kserve.io/v1beta1"] -->|"creates"| KSVC["Knative Service<br/>serving.knative.dev/v1"]
-    KSVC -->|"creates"| REV["Revision<br/>immutable snapshot"]
-    REV -->|"creates"| DEP["Deployment<br/>manages pods"]
-    DEP -->|"manages"| POD1["Pod 1"]
-    DEP -->|"manages"| POD2["Pod 2"]
-    DEP -->|"manages"| POD3["Pod N"]
-
-    subgraph Pod1["Each Predictor Pod"]
-        QP["queue-proxy<br/>:8013"]
-        VC["kserve-container<br/>:8080"]
-    end
-```
-
-Each InferenceService gets its own Knative Service, which gets its own set of pods. This isolation means:
-
-- Models scale independently
-- Model A can have 3 replicas while Model B has 1
-- Updating Model A does not affect Model B
-
 ### InferenceService spec
 
 ```yaml
-predictor:
-  containers:
-    - name: kserve-container
-      image: substratusai/vllm:main-cpu
-      args: ["--model", "microsoft/phi-2", ...]
-      ports:
-        - containerPort: 8080
-          name: http1
-      resources:
-        requests:
-          cpu: "4"
-          memory: "8Gi"
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: vllm-phi2
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: huggingface
+      runtime: vllm-cpu
+      storageUri: hf://microsoft/phi-2
 ```
 
-The container **must** be named `kserve-container`. This is how KServe identifies the model container versus sidecars.
+The model is loaded from HuggingFace via `storageUri`. The runtime references the `ServingRuntime` by name.
 
 ---
 
@@ -118,12 +78,12 @@ The container **must** be named `kserve-container`. This is how KServe identifie
 
 ### Why Knative?
 
-LLM serving has a unique traffic pattern: you might have zero requests for hours, then suddenly get a burst. A traditional Deployment wastes resources running idle pods. Knative solves this:
+LLM serving has a unique traffic pattern. Knative provides:
 
-- **Scale to zero** — When there are no requests, pods scale to zero (we disable this with `minScale: 1`)
-- **Scale from zero** — When a request arrives, Knative routes through the "activator" which buffers the request while a new pod starts
-- **Revision tracking** — Every configuration change creates a new revision. Previous revisions remain available for rollback
-- **Traffic splitting** — Send 90% traffic to new revision and 10% to old (canary deployments)
+- **Scale to zero** — When there are no requests, pods scale to zero
+- **Scale from zero** — The activator buffers requests while a new pod starts
+- **Revision tracking** — Every configuration change creates a new revision for rollback
+- **Traffic splitting** — Canary deployments between revisions
 
 ### Key Concepts
 
@@ -137,23 +97,6 @@ LLM serving has a unique traffic pattern: you might have zero requests for hours
 
 ### Autoscaling
 
-```mermaid
-flowchart LR
-    subgraph AS["Knative Autoscaler"]
-        A["Autoscaler Pod"]
-    end
-
-    subgraph Pods["Predictor Pods"]
-        P1["Pod 1<br/>1 concurrent req"]
-        P2["Pod 2<br/>1 concurrent req"]
-        P3["Pod 3<br/>(idle)"]
-    end
-
-    A -->|"watches concurrency<br/>target: 1"| Pods
-    A -->|"scale up"| NEW["Pod N+1"]
-    A -.->|"scale down"| P3
-```
-
 ```yaml
 annotations:
   autoscaling.knative.dev/minScale: "1"
@@ -161,62 +104,7 @@ annotations:
   autoscaling.knative.dev/target: "1"
 ```
 
-The autoscaler works on **concurrency** (not CPU or memory):
-
-- When a pod has 1 active request → autoscaler adds another pod
-- At `maxScale: 3`, the system handles 3 concurrent requests
-- If all pods are full, additional requests are queued
-
----
-
-## Traefik (k3s Ingress)
-
-**What it is**: A modern HTTP reverse proxy and load balancer. Default ingress in k3s.
-
-**Official site**: [https://traefik.io](https://traefik.io)
-
-### Why Traefik?
-
-k3s includes Traefik pre-installed. It handles:
-
-- **Host-based routing** — Routes traffic based on the `Host` header
-- **TLS termination** — Handles HTTPS certificates
-- **Load balancing** — Distributes traffic across service endpoints
-- **Middleware** — Rate limiting, authentication, header manipulation
-
-### IngressRoute
-
-Instead of the standard Kubernetes Ingress, Traefik uses a custom `IngressRoute` resource:
-
-```yaml
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: llm-ingress
-spec:
-  entryPoints:
-    - web
-  routes:
-    - match: Host(`vllm-phi2-predictor.llm-system.llm.local`)
-      services:
-        - name: kourier
-          namespace: kourier-system
-          port: 80
-    - match: Host(`vllm-dialogpt-predictor.llm-system.llm.local`)
-      services:
-        - name: kourier
-          namespace: kourier-system
-          port: 80
-```
-
-```mermaid
-flowchart LR
-    REQ1["Request for<br/>vllm-phi2-..."] --> T["Traefik"]
-    REQ2["Request for<br/>vllm-dialogpt-..."] --> T
-    T -->|"routes both"| K["kourier:80<br/>kourier-system"]
-    K -->|"Host header"| PHI["vllm-phi2 revision"]
-    K -->|"Host header"| DIA["vllm-dialogpt revision"]
-```
+The autoscaler works on **concurrency** (not CPU or memory).
 
 ---
 
@@ -228,14 +116,39 @@ flowchart LR
 
 ### Why Kourier?
 
-Kourier sits between Traefik and the predictor pods. It handles Knative-specific routing:
+Kourier handles Knative-specific routing:
 
 - Maps hostnames to the correct Knative Service
 - Routes to the currently active revision
 - Supports traffic splitting between revisions
 - Integrates with Knative's autoscaling system
 
-Kourier runs as a Deployment in the `kourier-system` namespace and exposes a ClusterIP service also named `kourier`.
+Kourier runs as a Deployment in the `kourier-system` namespace.
+
+---
+
+## cert-manager
+
+**What it is**: A Kubernetes add-on that automates TLS certificate management.
+
+**Official site**: [https://cert-manager.io](https://cert-manager.io)
+
+### Why cert-manager?
+
+Required by KServe for webhook certificates. Also used by the chart to:
+
+- Configure Knative's cert-manager integration (`config-certmanager` ConfigMap)
+- Distribute CA trust bundles (`knative-ca-bundle` ConfigMaps)
+- Optionally bootstrap a local CA issuer for internal TLS
+
+The chart creates:
+
+| Resource | Purpose |
+|---|---|
+| `config-certmanager` in `knative-serving` | Tells Knative which issuers to use for TLS |
+| `knative-ca-bundle` in multiple namespaces | Distributes the CA certificate for cluster-local TLS |
+| `ClusterIssuer` (optional) | Bootstraps a self-signed + CA issuer chain |
+| `Certificate` (optional) | Creates an ingress TLS certificate |
 
 ---
 
@@ -247,78 +160,61 @@ Kourier runs as a Deployment in the `kourier-system` namespace and exposes a Clu
 
 ### Why app-template?
 
-Instead of writing separate Helm charts for ConfigMaps, Secrets, RBAC, PVCs, and other resources, app-template lets you define everything in a single `values.yaml` file.
+Instead of writing separate Helm templates for every resource, app-template lets you define everything in a single `values.yaml` file under the `serving:` key.
 
 ```mermaid
 flowchart LR
-    subgraph values["values.yaml"]
-        SA["serviceAccount"]
+    subgraph values["values.yaml (serving:)"] 
         CM["configMaps"]
-        S["secrets"]
         RBAC["rbac"]
         PVC["persistence"]
+        NP["networkpolicies"]
+        SM["serviceMonitor"]
         RAW["rawResources"]
     end
 
-    subgraph app-template["app-template chart"]
+    subgraph app-template["app-template subchart"]
         T["bjw-s/common template engine"]
     end
 
     subgraph k8s["Kubernetes Resources"]
-        KSA["ServiceAccount: llm-serviceaccount"]
-        KCM["ConfigMap: llm-config"]
-        KCM2["ConfigMap: phi2-chat-template"]
-        KS["Secret: llm-secrets"]
-        KR["Role: llm-role"]
-        KRB["RoleBinding: llm-binding"]
-        KPVC["PVC: model-cache"]
-        KIS1["InferenceService: vllm-phi2"]
-        KIS2["InferenceService: vllm-dialogpt"]
-        KIR["IngressRoute: llm-ingress"]
+        KCM["ConfigMap"]
+        KR["ClusterRole/ClusterRoleBinding"]
+        KPVC["PVC"]
+        KNP["NetworkPolicy"]
+        KSM["ServiceMonitor"]
+        KPDB["PodDisruptionBudget"]
+        KPC["PriorityClass"]
     end
 
-    SA --> T
     CM --> T
-    S --> T
     RBAC --> T
     PVC --> T
+    NP --> T
+    SM --> T
     RAW --> T
-    T --> KSA
     T --> KCM
-    T --> KCM2
-    T --> KS
     T --> KR
-    T --> KRB
     T --> KPVC
-    T --> KIS1
-    T --> KIS2
-    T --> KIR
+    T --> KNP
+    T --> KSM
+    T --> KPDB
+    T --> KPC
 ```
 
 ### How rawResources work
 
-The `rawResources` feature embeds KServe InferenceServices and Traefik IngressRoutes (both CRDs) inside the Helm chart without needing a custom chart. The `bjw-s/common` subchart provides a `_rawResource.tpl` template that:
+The `rawResources` feature embeds arbitrary Kubernetes resources inside the chart. A note about the `spec` field:
 
-1. Reads the resource definition from `rawResources` in values.yaml
-2. Extracts `apiVersion`, `kind`, `metadata.name`, and `spec`
-3. Renders them as a standard Kubernetes resource
+The `_rawResource.tpl` template reads the `spec` field from the raw resource entry but renders its contents directly. Values need a double `spec:` wrapper — the outer one for the template to read, the inner one to become the actual Kubernetes `spec:` field.
 
-> **Note about `spec` nesting**: The `_rawResource.tpl` reads the `spec` field from the raw resource entry but renders its contents directly. So the values need a double `spec:` wrapper — the outer one for the template to read, the inner one to become the actual Kubernetes `spec:` field.
-
----
-
-## Redis (Optional)
-
-**What it is**: An in-memory data store used as a KV cache for LLM inference.
-
-### Why Redis?
-
-Repeated prompts can be cached to avoid re-running inference for identical inputs. Useful for:
-- Chat systems where the same context appears repeatedly
-- Batch processing with repeated prompts
-- Reducing latency for common queries
-
-> Redis is not deployed by default. Use `make deploy-cache` to deploy it separately.
+```yaml
+rawResources:
+  my-resource:
+    spec:         # ← outer: consumed by bjw-s template
+      spec:       # ← inner: becomes the actual Kubernetes spec
+        key: value
+```
 
 ---
 
@@ -326,16 +222,16 @@ Repeated prompts can be cached to avoid re-running inference for identical input
 
 **What it is**: An open-source monitoring and alerting system.
 
+**Official site**: [https://prometheus.io](https://prometheus.io)
+
 ### Why Prometheus?
 
-Prometheus scrapes metrics from:
-- The vLLM engine (`/metrics` endpoint)
-- KServe controller
-- Knative components
+Prometheus scrapes metrics from the vLLM engine (`/metrics` endpoint). The chart optionally creates:
 
-These metrics help monitor tokens/second, latency, CPU/memory usage, and set up alerts.
+- **ServiceMonitor** — Tells Prometheus which services to scrape
+- **PrometheusRule** — Alerting rules for inference health
 
-> Prometheus is not deployed by default. Use `make deploy-monitoring` to deploy it separately.
+Requires the Prometheus Operator CRDs to be installed.
 
 ---
 

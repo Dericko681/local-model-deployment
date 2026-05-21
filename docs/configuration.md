@@ -1,416 +1,276 @@
 # Configuration
 
-All configuration lives in the Helm chart's `values.yaml` file at `charts/model-deployment/values.yaml`. This page explains every configuration option.
+All configuration lives in the Helm chart's `values.yaml` file at `charts/model-deployment/values.yaml`.
 
 ---
 
 ## File Structure
 
-The `values.yaml` is organized into sections under a single `serving:` key, which maps to the `bjw-s/app-template` dependency:
-
 ```yaml
-serving:                    # ← Passed to app-template subchart
-  global:                   # Chart-level settings
-  serviceAccount:           # Kubernetes ServiceAccount
-  configMaps:               # ConfigMaps
-  secrets:                  # Secrets
-  rbac:                     # Role & RoleBinding
-  persistence:              # PersistentVolumeClaim
-  rawResources:             # Custom CRDs (InferenceServices, IngressRoute)
-  models:                   # Model definitions (custom values)
-  vllm:                     # vLLM engine settings (custom values)
-  ingressConfig:            # Ingress settings (custom values)
-  knative:                  # Knative settings (custom values)
-```
+# Top-level chart configuration
+certManager:              # cert-manager integration
+inferenceServiceDefaults: # Global defaults for all InferenceServices
+servingRuntimes:          # vLLM runtime definitions
+inferenceServices:        # Model deployments
 
-> The `models`, `vllm`, `ingressConfig`, and `knative` sections are **custom values**. They are referenced by template expressions (`{{ .Values.vllm.image.repository }}`) inside the rawResources YAML.
+serving:                  # bjw-s app-template subchart values
+  global:                 # Chart-level settings
+  rbac:                   # ClusterRole/ClusterRoleBinding
+  configMaps:             # ConfigMaps
+  persistence:            # PersistentVolumeClaim
+  networkpolicies:        # NetworkPolicy (optional)
+  serviceMonitor:         # ServiceMonitor (optional, requires CRDs)
+  rawResources:           # PDB, PriorityClass, PrometheusRule (optional)
+```
 
 ---
 
-## Global Settings
+## Cert-Manager
+
+| Parameter | Description | Default |
+|---|---|---|
+| `certManager.enabled` | Enable cert-manager integration | `true` |
+| `certManager.useExistingIssuer` | Use existing issuer (skip bootstrap) | `true` |
+| `certManager.certificateClass.default` | Default Knative certificate class | `cert-manager.certificate.networking.knative.dev` |
+| `certManager.issuers.externalDomain` | External domain issuer ref | See values.yaml |
+| `certManager.issuers.clusterLocalDomain` | Cluster-local domain issuer ref | See values.yaml |
+| `certManager.issuers.systemInternal` | System internal issuer ref | See values.yaml |
+| `certManager.bootstrapLocalCA.enabled` | Bootstrap local CA issuer | `false` |
+| `certManager.trustBundle.enabled` | Deploy CA trust bundle ConfigMaps | `true` |
+| `certManager.certificate.enabled` | Create ingress TLS Certificate | `false` |
+
+### Encryption Zones
+
+Three encryption zones are configured in `config-certmanager` ConfigMap:
+
+| Zone | Purpose | Issuer Type |
+|---|---|---|
+| `issuerRef` | External domain certificates | ClusterIssuer |
+| `clusterLocalIssuerRef` | Cluster-local domain certificates | ClusterIssuer |
+| `systemInternalIssuerRef` | Knative internal TLS | ClusterIssuer |
+
+---
+
+## Inference Service Defaults
+
+Global defaults applied to all models unless overridden per-model:
+
+| Parameter | Description | Default |
+|---|---|---|
+| `inferenceServiceDefaults.visibility` | Knative visibility | `cluster-local` |
+| `inferenceServiceDefaults.deploymentMode` | KServe deployment mode | `Serverless` |
+| `inferenceServiceDefaults.observability.enabled` | Enable observability | `true` |
+| `inferenceServiceDefaults.observability.prometheus.enabled` | Prometheus scraping | `true` |
+| `inferenceServiceDefaults.observability.opentelemetry.enabled` | OTel tracing | `false` |
+| `inferenceServiceDefaults.observability.metricAggregation.enabled` | Metric aggregation | `false` |
+| `inferenceServiceDefaults.observability.autoscaling.class` | Autoscaler class | `""` |
+
+---
+
+## Serving Runtimes
+
+Define the vLLM container configuration:
+
+```yaml
+servingRuntimes:
+  vllm-cpu:
+    enabled: true
+    spec:
+      multiModel: false
+      protocolVersions: ["v1"]
+      supportedModelFormats:
+        - name: huggingface
+          autoSelect: true
+      containers:
+        kserve-container:
+          image:
+            repository: substratusai/vllm
+            tag: main-cpu
+          env:
+            HF_HOME: /hf-cache
+          resources: {}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+```
+
+---
+
+## Inference Services
+
+Define model deployments:
+
+```yaml
+inferenceServices:
+  phi2:
+    enabled: true
+    name: vllm-phi2
+    visibility: cluster-local
+    deploymentMode: Serverless
+    certificate:
+      class: ""                    # "" = use default from certManager.certificateClass
+    observability:
+      enabled: true
+      prometheus:
+        enabled: true
+    spec:
+      predictor:
+        minReplicas: 1
+        maxReplicas: 3
+        model:
+          modelFormat:
+            name: huggingface
+          runtime: vllm-cpu
+          storageUri: hf://microsoft/phi-2
+```
+
+---
+
+## bjw-s Network Policies
+
+Configured under `serving.networkpolicies`:
 
 ```yaml
 serving:
-  global:
-    nameOverride: model-deployment
-    createDefaultServiceAccount: false
-```
-
-| Field | Default | Description |
-|---|---|---|
-| `nameOverride` | `model-deployment` | Override the release name used in resource labels |
-| `createDefaultServiceAccount` | `false` | We create our own ServiceAccount, so disable the default |
-
----
-
-## ServiceAccount
-
-```yaml
-  serviceAccount:
+  networkpolicies:
     main:
       enabled: true
-      forceRename: llm-serviceaccount
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      rules:
+        ingress:
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: knative-serving
+        egress:
+          - to:
+              - namespaceSelector: {}
+            ports:
+              - protocol: TCP
+                port: 443
 ```
-
-Creates a service account named `llm-serviceaccount`. Pods use this identity to interact with the Kubernetes API.
-
-| Field | Description |
-|---|---|
-| `enabled` | Whether to create the resource |
-| `forceRename` | Override the auto-generated name |
 
 ---
 
-## ConfigMaps
+## bjw-s ServiceMonitor
+
+Requires Prometheus Operator CRDs:
 
 ```yaml
-  configMaps:
-    llm-config:
+serving:
+  serviceMonitor:
+    main:
       enabled: true
-      forceRename: llm-config
-      data:
-        MODEL_NAME: microsoft/phi-2
-        TENSOR_PARALLEL_SIZE: "1"
-        GPU_MEMORY_UTILIZATION: "0.85"
-        MAX_NUM_BATCHED_TOKENS: "8192"
-        MAX_NUM_SEQS: "256"
-    phi2-chat-template:
-      enabled: true
-      forceRename: phi2-chat-template
-      data:
-        chat_template.jinja: |
-          {% for message in messages %}
-          ...
-          {% endfor %}
+      selector:
+        matchLabels:
+          serving.kserve.io/inferenceservice: vllm-phi2
+      endpoints:
+        - port: http1
+          interval: 30s
+          path: /metrics
 ```
-
-### llm-config
-
-General configuration for the LLM deployment. These are available as environment variables.
-
-| Key | Value | Purpose |
-|---|---|---|
-| `MODEL_NAME` | `microsoft/phi-2` | Default model identifier |
-| `TENSOR_PARALLEL_SIZE` | `1` | Number of GPUs for tensor parallelism (1 = no parallelism, CPU mode) |
-| `GPU_MEMORY_UTILIZATION` | `0.85` | Fraction of GPU memory to use (not used on CPU) |
-| `MAX_NUM_BATCHED_TOKENS` | `8192` | Maximum tokens across all batched requests |
-| `MAX_NUM_SEQS` | `256` | Maximum number of concurrent sequences |
-
-### phi2-chat-template
-
-Custom Jinja2 chat template for Phi-2 (which does not have a built-in one). Mounted at `/chat-template/chat_template.jinja` in the phi-2 predictor pod.
 
 ---
 
-## Secrets
+## bjw-s Raw Resources
+
+### PodDisruptionBudget
 
 ```yaml
-  secrets:
-    llm-secrets:
-      enabled: true
-      forceRename: llm-secrets
-      type: Opaque
-      stringData:
-        REDIS_PASSWORD: llm_cache_password
-        HUGGINGFACE_TOKEN: ""
-```
-
-| Key | Default | Purpose |
-|---|---|---|
-| `REDIS_PASSWORD` | `llm_cache_password` | Password for Redis cache (if deployed) |
-| `HUGGINGFACE_TOKEN` | (empty) | HuggingFace authentication token for gated models |
-
-> Fill in `HUGGINGFACE_TOKEN` if you need to access gated models (like Llama, Mistral, etc.).
-
----
-
-## RBAC
-
-```yaml
-  rbac:
-    roles:
-      llm-role:
-        enabled: true
-        type: Role
-        forceRename: llm-role
-        rules:
-          - apiGroups: [""]
-            resources: ["endpoints", "pods", "services"]
-            verbs: ["get", "list", "watch"]
-    bindings:
-      llm-binding:
-        enabled: true
-        type: RoleBinding
-        forceRename: llm-binding
-        subjects:
-          - kind: ServiceAccount
-            name: llm-serviceaccount
-            namespace: llm-system
-        roleRef:
-          identifier: llm-role
-```
-
-The Role grants `get`, `list`, and `watch` permissions on `endpoints`, `pods`, and `services`. This is the minimum set of permissions the model pods need.
-
-| Permission | Why Needed |
-|---|---|
-| `get`/`list`/`watch` endpoints | For service discovery and communication |
-| `get`/`list`/`watch` pods | For monitoring and status checks |
-| `get`/`list`/`watch` services | For networking and routing |
-
----
-
-## Persistence
-
-```yaml
-  persistence:
-    model-cache:
-      enabled: true
-      type: persistentVolumeClaim
-      forceRename: model-cache
-      size: 10Gi
-      accessMode: ReadWriteOnce
-      retain: true
-      storageClass: ""
-```
-
-| Field | Value | Description |
-|---|---|---|
-| `size` | `10Gi` | 10 GB of storage for model weights |
-| `accessMode` | `ReadWriteOnce` | Only one pod can write at a time |
-| `retain` | `true` | Keep the PVC when the Helm release is deleted |
-| `storageClass` | `""` | Use the cluster's default storage class |
-
-The PVC stores downloaded HuggingFace model weights so they do not need to be re-downloaded every time a pod restarts.
-
----
-
-## Raw Resources (CRDs)
-
-These are custom Kubernetes resources that are passed through the Helm chart as raw YAML.
-
-### Phi-2 InferenceService
-
-```yaml
+serving:
   rawResources:
-    phi2:
+    model-pdb:
       enabled: true
-      forceRename: vllm-phi2
-      apiVersion: serving.kserve.io/v1beta1
-      kind: InferenceService
-      labels:
-        app: vllm-phi2
-      annotations:
-        autoscaling.knative.dev/minScale: "1"
-        autoscaling.knative.dev/maxScale: "3"
-        autoscaling.knative.dev/target: "1"
-```
-
-#### Autoscaling Annotations
-
-| Annotation | Value | Meaning |
-|---|---|---|
-| `autoscaling.knative.dev/minScale` | `1` | Minimum number of pods |
-| `autoscaling.knative.dev/maxScale` | `3` | Maximum number of pods |
-| `autoscaling.knative.dev/target` | `1` | Target concurrent requests per pod |
-
-#### Predictor Container
-
-```yaml
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
       spec:
         spec:
-          predictor:
-            serviceAccountName: llm-serviceaccount
-            containers:
-              - name: kserve-container
-                image: "{{ .Values.vllm.image.repository }}:{{ .Values.vllm.image.tag }}"
-                args:
-                  - --model={{ .Values.models.phi2.model }}
-                  - --max-model-len={{ .Values.models.phi2.maxModelLen }}
-                  - --chat-template=/chat-template/chat_template.jinja
+          minAvailable: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/component: predictor
 ```
 
-The `{{ .Values... }}` expressions are **Helm template directives** that reference the custom values sections at the bottom of `values.yaml`. They get replaced with actual values when the chart is rendered.
-
-### DialoGPT InferenceService
-
-Same structure but:
+### PriorityClasses
 
 ```yaml
-    dialogpt:
-      forceRename: vllm-dialogpt
-      # ...
-      args:
-        - --model={{ .Values.models.dialogpt.model }}
-        - --max-model-len={{ .Values.models.dialogpt.maxModelLen }}
-        # No --chat-template (model has built-in)
-```
-
-### Traefik IngressRoute
-
-```yaml
-    traefik-ingress:
+serving:
+  rawResources:
+    high-priority:
       enabled: true
-      forceRename: llm-ingress
-      apiVersion: traefik.io/v1alpha1
-      kind: IngressRoute
+      apiVersion: scheduling.k8s.io/v1
+      kind: PriorityClass
+      spec:
+        value: 1000000
+        globalDefault: false
+```
+
+### PrometheusRule (requires Prometheus Operator CRDs)
+
+```yaml
+serving:
+  rawResources:
+    prometheus-alerts:
+      enabled: true
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
       spec:
         spec:
-          entryPoints:
-            - web
-          routes:
-            - match: Host(`vllm-phi2-predictor.llm-system.{{ .Values.ingressConfig.domain }}`)
-              services:
-                - name: "{{ .Values.knative.gateway.service }}"
-                  namespace: "{{ .Values.knative.gateway.namespace }}"
-                  port: 80
+          groups:
+            - name: model-inference
+              rules:
+                - alert: ModelInferenceServiceDown
+                  expr: '...'
 ```
-
----
-
-## Custom Values
-
-These sections are **not used by app-template directly**. They exist so the template expressions in rawResources can reference them.
-
-### Models
-
-```yaml
-  models:
-    phi2:
-      inferenceService: vllm-phi2
-      model: microsoft/phi-2
-      maxModelLen: 2048
-      resources:
-        requests:
-          cpu: "4"
-          memory: 8Gi
-        limits:
-          cpu: "8"
-          memory: 16Gi
-    dialogpt:
-      inferenceService: vllm-dialogpt
-      model: microsoft/DialoGPT-small
-      maxModelLen: 1024
-      resources:
-        requests:
-          cpu: "4"
-          memory: 8Gi
-        limits:
-          cpu: "8"
-          memory: 16Gi
-```
-
-| Field | Description |
-|---|---|
-| `inferenceService` | Name of the InferenceService for reference |
-| `model` | HuggingFace model ID |
-| `maxModelLen` | Maximum sequence length in tokens |
-| `resources.requests` | Minimum guaranteed resources |
-| `resources.limits` | Maximum allowed resources |
-
-### vLLM
-
-```yaml
-  vllm:
-    image:
-      repository: substratusai/vllm
-      tag: main-cpu
-      pullPolicy: IfNotPresent
-    args:
-      host: 0.0.0.0
-      port: 8080
-      portName: http1
-      device: cpu
-      dtype: float32
-    env:
-      HF_HOME: /hf-cache
-      HF_HUB_DOWNLOAD_TIMEOUT: "600"
-      VLLM_CPU_KVCACHE_SPACE: "4"
-```
-
-| Field | Default | Description |
-|---|---|---|
-| `image.repository` | `substratusai/vllm` | Container image repository |
-| `image.tag` | `main-cpu` | Image tag (CPU-optimized build) |
-| `args.host` | `0.0.0.0` | Listen on all interfaces |
-| `args.port` | `8080` | Container port |
-| `args.device` | `cpu` | Run on CPU |
-| `args.dtype` | `float32` | 32-bit float precision |
-| `env.HF_HOME` | `/hf-cache` | HuggingFace cache directory |
-| `env.VLLM_CPU_KVCACHE_SPACE` | `4` | GB of CPU memory for KV cache |
-
-### Ingress
-
-```yaml
-  ingressConfig:
-    controller: traefik
-    domain: llm.local
-```
-
-| Field | Default | Description |
-|---|---|---|
-| `controller` | `traefik` | Ingress controller type |
-| `domain` | `llm.local` | Domain suffix for Knative services |
-
-### Knative
-
-```yaml
-  knative:
-    gateway:
-      service: kourier
-      namespace: kourier-system
-      port: 80
-```
-
-| Field | Default | Description |
-|---|---|---|
-| `service` | `kourier` | Knative gateway service name |
-| `namespace` | `kourier-system` | Namespace where Kourier runs |
-| `port` | `80` | Port to route traffic to |
 
 ---
 
 ## Customization Examples
 
-### Change the Phi-2 resource allocation
+### Change model resources
 
 ```yaml
-  models:
-    phi2:
-      resources:
-        requests:
-          cpu: "6"
-          memory: 12Gi
-        limits:
-          cpu: "12"
-          memory: 24Gi
-```
-
-After changing, redeploy:
-
-```bash
-helm upgrade --install model-deployment charts/model-deployment \
-  --namespace llm-system --skip-schema-validation
+inferenceServices:
+  phi2:
+    spec:
+      predictor:
+        model:
+          resources:
+            requests:
+              cpu: "6"
+              memory: 12Gi
 ```
 
 ### Add a new model
 
-1. Add the model definition under `models:`
-2. Add the InferenceService under `rawResources`
-3. Add a route in the IngressRoute
-
-### Change the domain
+Add a ServingRuntime and InferenceService entry:
 
 ```yaml
-  ingressConfig:
-    domain: mycompany.local
-```
+servingRuntimes:
+  my-model-runtime:
+    enabled: true
+    spec:
+      containers:
+        kserve-container:
+          image:
+            repository: my-org/my-vllm
+            tag: latest
 
-Also update the Knative domain ConfigMap:
-
-```bash
-kubectl patch configmap config-domain -n knative-serving \
-  --type merge -p '{"data":{"mycompany.local":""}}'
+inferenceServices:
+  my-model:
+    enabled: true
+    name: my-model
+    spec:
+      predictor:
+        model:
+          modelFormat:
+            name: huggingface
+          runtime: my-model-runtime
+          storageUri: hf://my-org/my-model
 ```
 
 ---

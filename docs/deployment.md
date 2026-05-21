@@ -1,6 +1,6 @@
 # Deployment
 
-This page covers both ways to deploy the system: **Helm** (recommended) and **kubectl** (direct). Each section includes the exact commands and explains what they do.
+This page covers Helm-based deployment (recommended).
 
 ---
 
@@ -8,71 +8,82 @@ This page covers both ways to deploy the system: **Helm** (recommended) and **ku
 
 Before deploying, you need a Kubernetes cluster with the following installed:
 
-| Component | Installation Command |
+| Component | Instructions |
 |---|---|
-| KServe | `kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.14.0/kserve.yaml` |
-| Knative Serving | `kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.16.0/serving-crds.yaml` and `-f serving-core.yaml` |
-| Kourier | `kubectl apply -f https://github.com/knative/net-kourier/releases/download/knative-v1.16.0/kourier.yaml` |
-| Knative to Kourier | `kubectl patch configmap/config-network -n knative-serving --type merge -p '{"data":{"ingress-class":"kourier.ingress.networking.knative.dev"}}'` |
+| KServe | `kubectl apply --server-side --force-conflicts -f https://github.com/kserve/kserve/releases/download/v0.18.0/kserve.yaml` |
+| Knative Serving | `kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.21.2/serving-crds.yaml` and `serving-core.yaml` |
+| Kourier | `kubectl apply -f https://github.com/knative-extensions/net-kourier/releases/download/knative-v1.21.0/kourier.yaml` |
+| cert-manager | `kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.0/cert-manager.yaml` |
+| Knative config | `kubectl patch configmap/config-network -n knative-serving --type merge -p '{"data":{"ingress-class":"kourier.ingress.networking.knative.dev"}}'` |
+| Knative domain | `kubectl patch configmap config-domain -n knative-serving --type merge -p '{"data":{"llm.local":""}}'` |
+| PVC support | `kubectl patch configmap config-features -n knative-serving --type merge -p '{"data":{"kubernetes.podspec-persistent-volume-claim":"enabled","kubernetes.podspec-persistent-volume-write":"enabled"}}'` |
+
+### Optional: Prometheus Operator CRDs
+
+For ServiceMonitor and PrometheusRule features:
+
+```bash
+kubectl apply -f https://github.com/prometheus-operator/prometheus-operator/releases/latest/download/bundle.yaml
+```
 
 ---
 
-## Method 1: Helm (Recommended)
-
-Helm packages all Kubernetes resources into a single chart. This project uses the `bjw-s/app-template` chart as a dependency.
+## Method 1: Helm Install from Source
 
 ```mermaid
 flowchart LR
     subgraph Helm["helm upgrade --install"]
-        VALS["values.yaml<br/>serving:"]
-        DEP["app-template<br/>chart"]
+        VALS["values.yaml"]
+        TEMPLATES["Custom templates<br/>(cert-manager, KServe CRDs)"]
+        BJWS["bjw-s/app-template<br/>subchart"]
     end
 
-    VALS --> DEP
+    VALS --> TEMPLATES
+    VALS --> BJWS
 
-    DEP -->|"app-template controllers"| SA["ServiceAccount: llm-serviceaccount"]
-    DEP --> S["Secret: llm-secrets"]
-    DEP --> CM1["ConfigMap: llm-config"]
-    DEP --> CM2["ConfigMap: phi2-chat-template"]
-    DEP --> PVC["PVC: model-cache"]
-    DEP --> R["Role: llm-role"]
-    DEP --> RB["RoleBinding: llm-binding"]
+    BJWS -->|"native"| CM["ConfigMap: phi2-chat-template"]
+    BJWS --> PVC["PVC: model-cache"]
+    BJWS --> RBAC["ClusterRole/ClusterRoleBinding"]
+    BJWS --> NP["NetworkPolicy (optional)"]
+    BJWS --> RAW["rawResources (PDB, PriorityClass, PrometheusRule)"]
 
-    DEP -->|"rawResources"| IS1["InferenceService: vllm-phi2"]
-    DEP --> IS2["InferenceService: vllm-dialogpt"]
-    DEP --> IR["IngressRoute: llm-ingress"]
+    TEMPLATES --> CC["ConfigMap: config-certmanager"]
+    TEMPLATES --> TB["knative-ca-bundle"]
+    TEMPLATES --> SR["ServingRuntime"]
+    TEMPLATES --> IS["InferenceService"]
 ```
 
-### Option A: From the published chart repository
+### 1. Update Dependencies
 
 ```bash
-# Add the repo (one-time)
-helm repo add local-model-deployment https://dericko681.github.io/local-model-deployment
-helm repo update
-
-# Deploy
-helm upgrade --install model-deployment local-model-deployment/model-deployment \
-  --namespace llm-system \
-  --create-namespace \
-  --skip-schema-validation
-```
-
-### Option B: From source
-
-```bash
-# 1. Update Dependencies
 helm dependency update charts/model-deployment
+```
 
-# 2. Preview (Optional)
-helm template model-deployment charts/model-deployment \
-  --namespace llm-system \
-  --skip-schema-validation
+### 2. Preview (Optional)
 
-# 3. Deploy
+```bash
+helm template model-deployment charts/model-deployment --namespace llm-system
+```
+
+### 3. Deploy
+
+```bash
 helm upgrade --install model-deployment charts/model-deployment \
-  --namespace llm-system \
-  --create-namespace \
-  --skip-schema-validation
+  --namespace llm-system --create-namespace
+```
+
+### 4. With All Optional Features
+
+```bash
+helm upgrade --install model-deployment charts/model-deployment \
+  --namespace llm-system --create-namespace \
+  --set serving.networkpolicies.main.enabled=true \
+  --set serving.serviceMonitor.main.enabled=true \
+  --set 'serving.rawResources.prometheus-alerts.enabled=true' \
+  --set 'serving.rawResources.model-pdb.enabled=true' \
+  --set 'serving.rawResources.high-priority.enabled=true' \
+  --set 'serving.rawResources.medium-priority.enabled=true' \
+  --set 'serving.rawResources.low-priority.enabled=true'
 ```
 
 | Flag | Meaning |
@@ -80,85 +91,6 @@ helm upgrade --install model-deployment charts/model-deployment \
 | `--install` | Install if not present, upgrade if it is |
 | `--namespace llm-system` | Deploy into the `llm-system` namespace |
 | `--create-namespace` | Create the namespace if it does not exist |
-| `--skip-schema-validation` | Skip schema validation for CRDs |
-
-### 4. Configure Knative Domain
-
-```bash
-kubectl patch configmap config-domain \
-  -n knative-serving \
-  --type merge \
-  -p '{"data":{"llm.local":""}}'
-```
-
-Tells Knative to use `llm.local` as the domain suffix for all Knative services.
-
-### What the Helm chart creates
-
-| # | Kind | Name | values.yaml source |
-|---|---|---|---|
-| 1 | `ServiceAccount` | `llm-serviceaccount` | `servicing.serviceAccount.main` |
-| 2 | `Secret` | `llm-secrets` | `servicing.secrets.llm-secrets` |
-| 3 | `ConfigMap` | `llm-config` | `servicing.configMaps.llm-config` |
-| 4 | `ConfigMap` | `phi2-chat-template` | `servicing.configMaps.phi2-chat-template` |
-| 5 | `PersistentVolumeClaim` | `model-cache` | `servicing.persistence.model-cache` |
-| 6 | `Role` | `llm-role` | `servicing.rbac.roles.llm-role` |
-| 7 | `RoleBinding` | `llm-binding` | `servicing.rbac.bindings.llm-binding` |
-| 8 | `InferenceService` | `vllm-phi2` | `servicing.rawResources.phi2` |
-| 9 | `InferenceService` | `vllm-dialogpt` | `servicing.rawResources.dialogpt` |
-| 10 | `IngressRoute` | `llm-ingress` | `servicing.rawResources.traefik-ingress` |
-
-See [Architecture → Resources](architecture.md#resources-deployed) for a detailed explanation of each.
-
----
-
-## Method 2: kubectl
-
-The `k8s/` directory contains standalone YAML files. Apply them in dependency order.
-
-### Using Make
-
-```bash
-# Deploy everything
-make deploy
-
-# Deploy only DialoGPT
-make deploy-kserve
-
-# Deploy only Phi-2
-make deploy-phi2
-```
-
-`make deploy`:
-1. Creates the namespace
-2. Applies ConfigMaps, Secrets, RBAC, and storage
-3. Configures the Knative domain
-4. Applies both InferenceServices and the Traefik IngressRoute
-
-### Manual
-
-```bash
-# 1. Namespace
-kubectl apply -f k8s/namespaces/namespace.yaml
-
-# 2. Base infrastructure
-kubectl apply -f k8s/configmaps/configmaps.yaml
-kubectl apply -f k8s/configmaps/phi2-chat-template.yaml
-kubectl apply -f k8s/secrets/secrets.yaml
-kubectl apply -f k8s/rbac/rbac.yaml
-kubectl apply -f k8s/storage/storage.yaml
-
-# 3. Knative domain
-kubectl patch configmap config-domain -n knative-serving \
-  --type merge -p '{"data":{"llm.local":""}}'
-
-# 4. Models
-kubectl apply -f k8s/kserve/vllm-inference-service.yaml
-kubectl apply -f k8s/kserve/vllm-phi2-inference-service.yaml
-
-# 5. Ingress
-kubectl apply -f k8s/ingress/traefik-ingress.yaml
-```
 
 ---
 
@@ -166,7 +98,7 @@ kubectl apply -f k8s/ingress/traefik-ingress.yaml
 
 ```bash
 # Check all resources
-kubectl get inferenceservice,ksvc,deployment,pod,ingressroute -n llm-system
+kubectl get inferenceservice,servingruntime,configmap,pvc -n llm-system
 
 # Watch pods start up
 kubectl get pods -n llm-system -w
@@ -175,9 +107,8 @@ kubectl get pods -n llm-system -w
 Expected output (after pods are ready):
 
 ```
-NAME                                   READY   STATUS    RESTARTS   AGE
-vllm-phi2-predictor-00001-deployment-xxx   2/2   Running   0          2m
-vllm-dialogpt-predictor-00001-deployment-xxx  2/2 Running  0          2m
+NAME                                                   READY   STATUS    RESTARTS   AGE
+vllm-phi2-predictor-00001-deployment-xxx               2/2     Running   0          2m
 ```
 
 Each pod has **2/2 containers ready**: the `queue-proxy` (Knative sidecar) and `kserve-container` (vLLM engine).
@@ -187,46 +118,17 @@ Each pod has **2/2 containers ready**: the `queue-proxy` (Knative sidecar) and `
 ## Testing
 
 ```bash
-# Using Make
-make test
-```
-
-Or manually:
-
-```bash
-# Phi-2 chat completion
-curl -s \
-  -H "Host: vllm-phi2-predictor.llm-system.llm.local" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "microsoft/phi-2", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 50}' \
-  http://192.168.4.35/v1/chat/completions | python3 -m json.tool
-
-# DialoGPT chat completion
-curl -s \
-  -H "Host: vllm-dialogpt-predictor.llm-system.llm.local" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "microsoft/DialoGPT-small", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 50}' \
-  http://192.168.4.35/v1/chat/completions | python3 -m json.tool
+# List models via vLLM API
+kubectl exec -n llm-system deploy/<predictor-deployment> -c kserve-container \
+  -- curl -s http://localhost:8080/v1/models
 ```
 
 ---
 
 ## Cleanup
 
-### Helm
-
 ```bash
 helm uninstall model-deployment --namespace llm-system
-```
-
-### kubectl
-
-```bash
-# Remove only models and ingress
-make clean
-
-# Remove everything including storage, secrets, configmaps, RBAC
-make clean-all
 ```
 
 ---
@@ -257,7 +159,7 @@ Check for error messages in the status conditions.
 
 ```bash
 # Check vLLM logs
-kubectl logs -n llm-system -l serving.knative.dev/service=vllm-phi2-predictor \
+kubectl logs -n llm-system -l serving.knative.dev/service=<model>-predictor \
   -c kserve-container --tail=100
 ```
 

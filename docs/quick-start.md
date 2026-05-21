@@ -1,6 +1,6 @@
 # Quick Start
 
-From a **fresh machine** to running LLMs in ~10 minutes.
+From a **fresh machine** to running LLMs quickly.
 
 Pick one cluster option, then run the common steps.
 
@@ -31,7 +31,7 @@ k3d cluster create md-test --servers 1 --agents 1 \
 ## Install Dependencies
 
 ```bash
-# cert-manager (required by KServe v0.18)
+# cert-manager (required by KServe)
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.0/cert-manager.yaml
 kubectl wait --for=condition=Available deployment -n cert-manager cert-manager cert-manager-cainjector cert-manager-webhook --timeout=120s
 
@@ -57,15 +57,34 @@ kubectl apply --server-side --force-conflicts \
   -f https://github.com/kserve/kserve/releases/download/v0.18.0/kserve.yaml
 ```
 
+### Optional: Prometheus Operator CRDs (for ServiceMonitor/PrometheusRule)
+
+```bash
+kubectl apply -f https://github.com/prometheus-operator/prometheus-operator/releases/latest/download/bundle.yaml
+```
+
 ---
 
 ## Deploy Chart
 
 ```bash
-helm repo add local-model-deployment https://dericko681.github.io/local-model-deployment
-helm repo update
-helm upgrade --install model-deployment local-model-deployment/model-deployment \
-  --namespace llm-system --create-namespace --skip-schema-validation
+# Build Helm dependencies
+helm dependency update charts/model-deployment
+
+# Deploy
+helm upgrade --install model-deployment charts/model-deployment \
+  --namespace llm-system --create-namespace
+
+# With all optional features enabled:
+helm upgrade --install model-deployment charts/model-deployment \
+  --namespace llm-system --create-namespace \
+  --set serving.networkpolicies.main.enabled=true \
+  --set serving.serviceMonitor.main.enabled=true \
+  --set 'serving.rawResources.prometheus-alerts.enabled=true' \
+  --set 'serving.rawResources.model-pdb.enabled=true' \
+  --set 'serving.rawResources.high-priority.enabled=true' \
+  --set 'serving.rawResources.medium-priority.enabled=true' \
+  --set 'serving.rawResources.low-priority.enabled=true'
 ```
 
 ---
@@ -73,41 +92,26 @@ helm upgrade --install model-deployment local-model-deployment/model-deployment 
 ## Wait & Test
 
 ```bash
-# Wait for the model to be ready
-kubectl wait --for=condition=Ready ksvc/vllm-dialogpt-predictor -n llm-system --timeout=600s
+# Watch pods start
+kubectl get pods -n llm-system -w
 
 # Check status
 kubectl get inferenceservice -n llm-system
 kubectl get pods -n llm-system
 
-# Test via Kourier NodePort
-NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-KOURIER_PORT=$(kubectl get svc kourier -n kourier-system -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
-
-curl -s http://$NODE_IP:$KOURIER_PORT/v1/chat/completions \
-  -H "Host: vllm-dialogpt-predictor.llm-system.llm.local" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "microsoft/DialoGPT-small", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 30}'
-```
-
-Expected response:
-
-```json
-{
-    "id": "chatcmpl-...",
-    "object": "chat.completion",
-    "choices": [{"message": {"role": "assistant", "content": "Hello to all ."}}]
-}
+# Test via Kourier
+kubectl exec -n <namespace> deploy/<predictor-deployment> -c kserve-container \
+  -- curl -s http://localhost:8080/v1/models
 ```
 
 ---
 
 ## Notes
 
-- KServe v0.18 requires cert-manager for webhook certificates.
-- `--server-side --force-conflicts` is required for KServe CRDs (known issue: kserve/kserve#3487).
-- The chart includes a Traefik IngressRoute. For k3d with Traefik disabled, the Traefik CRDs are installed separately. Direct Kourier NodePort access is the reliable test path.
-- **Phi-2 (2.7B)** requests 8GB memory; may fail on constrained nodes. DialoGPT (117M) is lighter.
+- KServe requires cert-manager for webhook certificates.
+- `--server-side --force-conflicts` is required for KServe CRDs.
+- ServiceMonitor and PrometheusRule require the Prometheus Operator CRDs.
+- The chart deploys models configured in `inferenceServices` in `values.yaml`.
 
 ---
 
