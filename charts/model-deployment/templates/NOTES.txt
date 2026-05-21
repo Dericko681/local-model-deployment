@@ -28,6 +28,3 @@ Prometheus ServiceMonitor has been created for metrics scraping.
 Network policies are enforced for this namespace.
 {{- end }}
 
-{{- if (index (index .Values.serving.rawResources "high-priority") "enabled") }}
-Priority classes are configured for inference workloads.
-{{- end }}
