@@ -3,6 +3,37 @@ entries:
   model-deployment:
   - apiVersion: v2
     appVersion: "1.0"
+    created: "2026-05-21T11:30:19.194922118Z"
+    dependencies:
+    - alias: serving
+      name: app-template
+      repository: https://bjw-s-labs.github.io/helm-charts
+      version: 4.6.2
+    description: 'Deploys LLM models (Phi-2, DialoGPT-small) using vLLM, KServe, and
+      Knative. Provides an OpenAI-compatible API endpoint per model. '
+    digest: e3db5c071f4f93f4ec94e0069aaf404fce749f67105eff8faa0a5d4a9210820d
+    home: https://github.com/adorsys/model-deployment
+    keywords:
+    - llm
+    - vllm
+    - kserve
+    - knative
+    - inference
+    - phi-2
+    - dialogpt
+    kubeVersion: '>=1.28.0-0'
+    maintainers:
+    - email: Derick.Kunga@adorsys.com
+      name: adorsys
+    name: model-deployment
+    sources:
+    - https://github.com/adorsys/model-deployment
+    type: application
+    urls:
+    - https://github.com/Dericko681/local-model-deployment/releases/download/model-deployment-0.3.0/model-deployment-0.3.0.tgz
+    version: 0.3.0
+  - apiVersion: v2
+    appVersion: "1.0"
     created: "2026-05-11T10:04:01.651033338Z"
     dependencies:
     - alias: serving
@@ -32,4 +63,4 @@ entries:
     urls:
     - https://github.com/Dericko681/local-model-deployment/releases/download/model-deployment-0.2.0/model-deployment-0.2.0.tgz
     version: 0.2.0
-generated: "2026-05-11T10:04:01.651044533Z"
+generated: "2026-05-21T11:30:19.194933848Z"
