@@ -18,6 +18,10 @@
 {{- $vols := list }}{{ range $name, $vol := . }}{{ $entry := dict "name" $name }}{{ $vols = append $vols (merge $entry $vol) }}{{ end }}{{ toYaml $vols -}}
 {{- end }}
 
+{{- define "model-deployment.fullname" -}}
+{{- .Release.Name -}}
+{{- end }}
+
 {{- define "helpers.probeSpec" -}}
 {{- $probe := dict }}{{ if .httpGet }}{{ $probe = set $probe "httpGet" .httpGet }}{{ end }}{{ if .exec }}{{ $probe = set $probe "exec" .exec }}{{ end }}{{ if .grpc }}{{ $probe = set $probe "grpc" .grpc }}{{ end }}{{ if .tcpSocket }}{{ $probe = set $probe "tcpSocket" .tcpSocket }}{{ end }}{{ if hasKey . "initialDelaySeconds" }}{{ $probe = set $probe "initialDelaySeconds" .initialDelaySeconds }}{{ end }}{{ if hasKey . "timeoutSeconds" }}{{ $probe = set $probe "timeoutSeconds" .timeoutSeconds }}{{ end }}{{ if hasKey . "periodSeconds" }}{{ $probe = set $probe "periodSeconds" .periodSeconds }}{{ end }}{{ if hasKey . "successThreshold" }}{{ $probe = set $probe "successThreshold" .successThreshold }}{{ end }}{{ if hasKey . "failureThreshold" }}{{ $probe = set $probe "failureThreshold" .failureThreshold }}{{ end -}}
 {{ toYaml $probe -}}

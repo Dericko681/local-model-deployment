@@ -21,6 +21,10 @@ spec:
   {{- if hasKey $sr.spec "disabled" }}
   disabled: {{ $sr.spec.disabled }}
   {{- end }}
+  {{- with $sr.spec.imagePullSecrets }}
+  imagePullSecrets:
+{{ toYaml . | indent 4 }}
+  {{- end }}
   {{- with $sr.spec.protocolVersions }}
   protocolVersions:
 {{ toYaml . | indent 4 }}
@@ -153,6 +157,10 @@ spec:
 {{ include "helpers.volumeMountsFromMap" . | indent 10 }}
         {{- end }}
 {{- end }}
+      {{- end }}
+      {{- with .imagePullSecrets }}
+      imagePullSecrets:
+{{ toYaml . | indent 8 }}
       {{- end }}
       {{- with .nodeSelector }}
       nodeSelector:

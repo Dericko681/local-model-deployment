@@ -1,3 +1,44 @@
+# Global settings applied to all resources
+global:
+  # Image registry configuration
+  imageRegistry: ""
+  imagePullSecrets: []
+  # - name: regcred
+  
+  # Priority class for pods
+  priorityClassName: ""
+  
+  # Runtime class for pods (e.g., for GPU nodes with nvidia)
+  runtimeClassName: ""
+  
+  # Pod security context (applied at pod level)
+  podSecurityContext:
+    runAsUser: null
+    runAsGroup: null
+    fsGroup: null
+    runAsNonRoot: null
+    seccompProfile:
+      type: ""
+  
+  # Container security context (applied at container level)
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: null
+    runAsUser: null
+    capabilities:
+      drop: []
+      add: []
+  
+  # Topology spread constraints for HA
+  topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: ScheduleAnyway
+  #   labelSelector:
+  #     matchLabels: {}
+
+# Cert-Manager configuration
 certManager:
   enabled: true
   useExistingIssuer: true
@@ -32,10 +73,6 @@ certManager:
 
   certificateClass:
     default: "cert-manager.certificate.networking.knative.dev"
-
-  rbac:
-    enabled: true
-    serviceAccountName: ""
 
   certificate:
     enabled: false
@@ -107,6 +144,173 @@ serving:
       retain: true
       storageClass: ""
 
+  # NetworkPolicy via bjw-s app-template
+  networkpolicies:
+    main:
+      enabled: false
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      rules:
+        ingress:
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: knative-serving
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: '{{ .Release.Namespace }}'
+            ports:
+              - protocol: TCP
+                port: 8080
+        egress:
+          - to:
+              - namespaceSelector: {}
+            ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+          - to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+            ports:
+              - protocol: TCP
+                port: 443
+          - to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+            ports:
+              - protocol: TCP
+                port: 80
+
+  # ServiceMonitor via bjw-s app-template
+  serviceMonitor:
+    main:
+      enabled: false
+      selector:
+        matchLabels:
+          serving.kserve.io/inferenceservice: vllm-phi2
+      endpoints:
+        - port: http1
+          interval: 30s
+          scrapeTimeout: 10s
+          honorLabels: false
+          path: /metrics
+          scheme: http
+
+  # Raw resources via bjw-s app-template (for KServe-scoped resources)
+  rawResources:
+    # PrometheusRule for alerting
+    prometheus-alerts:
+      enabled: false
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      spec:
+        groups:
+          - name: model-inference
+            interval: 30s
+            rules:
+              - alert: ModelInferenceServiceDown
+                expr: 'kserve_inference_service_status_ready{namespace="{{ .Release.Namespace }}"} == 0'
+                for: 5m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Inference Service is down"
+                  description: 'Inference Service {{ "{{" }} $labels.inference_service {{ "}}" }} has been down for more than 5 minutes.'
+              - alert: ModelInferenceHighLatency
+                expr: 'histogram_quantile(0.95, rate(kserve_inference_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}"}[5m])) > 10'
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "High inference latency detected"
+                  description: '95th percentile latency is above 10 seconds for {{ "{{" }} $labels.inference_service {{ "}}" }}.'
+              - alert: ModelInferenceHighErrorRate
+                expr: 'rate(kserve_inference_request_total{namespace="{{ .Release.Namespace }}", status_code=~"5.."}[5m]) / rate(kserve_inference_request_total{namespace="{{ .Release.Namespace }}"}[5m]) > 0.1'
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "High error rate detected"
+                  description: 'Error rate is above 10% for {{ "{{" }} $labels.inference_service {{ "}}" }}.'
+
+    # PrometheusRule for alerting (requires Prometheus Operator CRDs)
+    prometheus-alerts:
+      enabled: false
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      spec:
+        spec:
+          groups:
+            - name: model-inference
+              interval: 30s
+              rules:
+                - alert: ModelInferenceServiceDown
+                  expr: 'kserve_inference_service_status_ready{namespace="{{ .Release.Namespace }}"} == 0'
+                  for: 5m
+                  labels:
+                    severity: critical
+                  annotations:
+                    summary: "Inference Service is down"
+                    description: 'Inference Service {{ "{{" }} $labels.inference_service {{ "}}" }} has been down for more than 5 minutes.'
+                - alert: ModelInferenceHighLatency
+                  expr: 'histogram_quantile(0.95, rate(kserve_inference_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}"}[5m])) > 10'
+                  for: 5m
+                  labels:
+                    severity: warning
+                  annotations:
+                    summary: "High inference latency detected"
+                    description: '95th percentile latency is above 10 seconds for {{ "{{" }} $labels.inference_service {{ "}}" }}.'
+                - alert: ModelInferenceHighErrorRate
+                  expr: 'rate(kserve_inference_request_total{namespace="{{ .Release.Namespace }}", status_code=~"5.."}[5m]) / rate(kserve_inference_request_total{namespace="{{ .Release.Namespace }}"}[5m]) > 0.1'
+                  for: 5m
+                  labels:
+                    severity: warning
+                  annotations:
+                    summary: "High error rate detected"
+                    description: 'Error rate is above 10% for {{ "{{" }} $labels.inference_service {{ "}}" }}.'
+
+    # PodDisruptionBudget for KServe predictor pods
+    model-pdb:
+      enabled: false
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      spec:
+        spec:
+          minAvailable: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/component: predictor
+
+    # PriorityClasses
+    high-priority:
+      enabled: false
+      apiVersion: scheduling.k8s.io/v1
+      kind: PriorityClass
+      spec:
+        value: 1000000
+        globalDefault: false
+        description: "High priority for critical inference services"
+    medium-priority:
+      enabled: false
+      apiVersion: scheduling.k8s.io/v1
+      kind: PriorityClass
+      spec:
+        value: 100000
+        globalDefault: true
+        description: "Medium priority for standard inference services"
+    low-priority:
+      enabled: false
+      apiVersion: scheduling.k8s.io/v1
+      kind: PriorityClass
+      spec:
+        value: 1000
+        globalDefault: false
+        description: "Low priority for batch inference services"
+
 servingRuntimes:
   vllm-cpu:
     enabled: true
@@ -159,24 +363,55 @@ servingRuntimes:
             initialDelaySeconds: 300
             periodSeconds: 30
             timeoutSeconds: 5
-          volumeMounts:
-            model-cache:
-              mountPath: /hf-cache
       nodeSelector: {}
       tolerations: []
       affinity: {}
+
+inferenceServiceDefaults:
+  visibility: ""
+  deploymentMode: "Serverless"
+  observability:
+    enabled: true
+    prometheus:
+      enabled: true
+      port: "8080"
+      path: "/metrics"
+      scheme: "http"
+    metricAggregation:
+      enabled: false
+    opentelemetry:
+      enabled: false
+      sidecarInject: ""
+    autoscaling:
+      class: ""
+      metrics: []
 
 inferenceServices:
   phi2:
     enabled: true
     name: vllm-phi2
-    visibility: "cluster-local"
+    visibility: ""
+    deploymentMode: "Serverless"
     certificate:
       class: ""
+    observability:
+      enabled: true
+      prometheus:
+        enabled: true
+        port: "8080"
+        path: "/metrics"
+        scheme: "http"
+      metricAggregation:
+        enabled: false
+      opentelemetry:
+        enabled: false
+        sidecarInject: ""
+      autoscaling:
+        class: ""
+        metrics: []
     annotations:
       autoscaling.knative.dev/minScale: "1"
       autoscaling.knative.dev/maxScale: "3"
-      autoscaling.knative.dev/target: "1"
     labels:
       app: vllm-phi2
     spec:
@@ -185,7 +420,7 @@ inferenceServices:
         maxReplicas: 3
         timeout: 300
         scaleMetric: concurrency
-        scaleTarget: 1
+        scaleTarget: 10
         model:
           modelFormat:
             name: huggingface
@@ -207,6 +442,8 @@ inferenceServices:
               cpu: "8"
               memory: 16Gi
           volumeMounts:
+            model-cache:
+              mountPath: /hf-cache
             chat-template:
               mountPath: /chat-template
               readOnly: true
@@ -217,3 +454,31 @@ inferenceServices:
           model-cache:
             persistentVolumeClaim:
               claimName: model-cache
+
+
+
+# Additional service accounts
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+  labels: {}
+  automountServiceAccountToken: true
+
+# Image pull secrets configuration
+imagePullSecrets: []
+
+# Node selector for all workloads (can be overridden per service)
+nodeSelector: {}
+
+# Tolerations for all workloads (can be overridden per service)
+tolerations: []
+
+# Affinity for all workloads (can be overridden per service)
+affinity: {}
+
+# Extra labels to add to all resources
+extraLabels: {}
+
+# Extra annotations to add to all resources
+extraAnnotations: {}

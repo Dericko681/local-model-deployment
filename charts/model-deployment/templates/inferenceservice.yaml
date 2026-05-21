@@ -1,18 +1,24 @@
 {{- range $name, $isvc := .Values.inferenceServices }}
 {{- if $isvc.enabled }}
-{{- $certClass := $isvc.certificate.class }}
+{{- $defaults := $.Values.inferenceServiceDefaults }}
+{{- $certClass := "" }}
+{{- if $isvc.certificate }}{{ $certClass = $isvc.certificate.class }}{{ end }}
 {{- if not $certClass }}
 {{-   if $.Values.certManager.enabled }}
 {{-     $certClass = $.Values.certManager.certificateClass.default }}
 {{-   end }}
 {{- end }}
+{{- $visibility := $isvc.visibility | default $defaults.visibility }}
+{{- $deploymentMode := $isvc.deploymentMode | default $defaults.deploymentMode }}
+{{- $obs := $isvc.observability | default $defaults.observability }}
+{{- $hasObsAnnotations := and $obs.enabled (or $obs.prometheus.enabled $obs.metricAggregation.enabled $obs.opentelemetry.sidecarInject $obs.autoscaling.class) }}
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: {{ $isvc.name | default $name }}
   namespace: {{ $.Release.Namespace }}
-  {{- if or $isvc.annotations $certClass $isvc.visibility }}
+  {{- if or $isvc.annotations $certClass $visibility $deploymentMode $hasObsAnnotations }}
   annotations:
 {{- with $isvc.annotations }}
 {{ toYaml . | indent 4 }}
@@ -20,8 +26,27 @@ metadata:
 {{- if $certClass }}
     networking.knative.dev/certificate-class: {{ $certClass | quote }}
 {{- end }}
-{{- if $isvc.visibility }}
-    networking.knative.dev/visibility: {{ $isvc.visibility | quote }}
+{{- if $visibility }}
+    networking.knative.dev/visibility: {{ $visibility | quote }}
+{{- end }}
+{{- if $deploymentMode }}
+    serving.kserve.io/deploymentMode: {{ $deploymentMode | quote }}
+{{- end }}
+{{- if and $obs.enabled $obs.prometheus.enabled }}
+    serving.kserve.io/enable-prometheus-scraping: "true"
+    prometheus.io/scrape: "true"
+    prometheus.io/path: {{ $obs.prometheus.path | quote }}
+    prometheus.io/port: {{ $obs.prometheus.port | quote }}
+    prometheus.io/scheme: {{ $obs.prometheus.scheme | quote }}
+{{- end }}
+{{- if and $obs.enabled $obs.metricAggregation.enabled }}
+    serving.kserve.io/enable-metric-aggregation: "true"
+{{- end }}
+{{- if and $obs.enabled $obs.opentelemetry.enabled $obs.opentelemetry.sidecarInject }}
+    sidecar.opentelemetry.io/inject: {{ $obs.opentelemetry.sidecarInject | quote }}
+{{- end }}
+{{- if and $obs.enabled $obs.autoscaling.class }}
+    serving.kserve.io/autoscalerClass: {{ $obs.autoscaling.class | quote }}
 {{- end }}
   {{- end }}
   {{- with $isvc.labels }}
@@ -47,6 +72,11 @@ spec:
     {{- end }}
     {{- if hasKey $isvc.spec.predictor "scaleTarget" }}
     scaleTarget: {{ $isvc.spec.predictor.scaleTarget }}
+    {{- end }}
+    {{- if and $obs.enabled $obs.autoscaling.metrics }}
+    autoScaling:
+      metrics:
+{{ toYaml $obs.autoscaling.metrics | indent 8 }}
     {{- end }}
     {{- with $isvc.spec.predictor.model }}
     model:

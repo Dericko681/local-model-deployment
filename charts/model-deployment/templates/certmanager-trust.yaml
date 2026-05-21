@@ -15,12 +15,13 @@ metadata:
     app.kubernetes.io/part-of: knative-serving
     app.kubernetes.io/component: certmanager
     app.kubernetes.io/version: {{ $.Chart.AppVersion | quote }}
-  {{- if and $caSecret.name (not $caBundle) }}
+    networking.knative.dev/trust-bundle: "true"
+  {{- if and (not $caBundle) $caSecret.name }}
   annotations:
     cert-manager.io/inject-ca-from-secret: {{ $ns }}/{{ $caSecret.name }}
-  {{- else if and $caConfigMap.name (not $caBundle) }}
+  {{- else if and (not $caBundle) $caConfigMap.name }}
   annotations:
-    cert-manager.io/inject-ca-from-secret: {{ $ns }}/{{ $caConfigMap.name }}
+    cert-manager.io/inject-ca-from: {{ $ns }}/{{ $caConfigMap.name }}
   {{- end }}
 data:
   {{- if $caBundle }}

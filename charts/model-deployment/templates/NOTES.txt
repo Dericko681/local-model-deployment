@@ -1,0 +1,33 @@
+Thank you for installing {{ .Chart.Name }} {{ .Chart.Version }}.
+
+Your KServe InferenceService(s) are being deployed:
+
+{{- range $name, $isvc := .Values.inferenceServices }}
+{{- if $isvc.enabled }}
+  - {{ $isvc.name | default $name }}
+{{- end }}
+{{- end }}
+
+To check status:
+
+  kubectl get inferenceservices --namespace {{ .Release.Namespace }}
+  kubectl get pods --namespace {{ .Release.Namespace }} -l serving.kserve.io/inferenceservice
+
+{{- if .Values.certManager.enabled }}
+Certificate management via cert-manager is enabled.
+{{- if .Values.certManager.bootstrapLocalCA.enabled }}
+Local CA issuer is being bootstrapped
+{{- end }}
+{{- end }}
+
+{{- if .Values.serving.serviceMonitor.main.enabled }}
+Prometheus ServiceMonitor has been created for metrics scraping.
+{{- end }}
+
+{{- if .Values.serving.networkpolicies.main.enabled }}
+Network policies are enforced for this namespace.
+{{- end }}
+
+{{- if (index (index .Values.serving.rawResources "high-priority") "enabled") }}
+Priority classes are configured for inference workloads.
+{{- end }}
