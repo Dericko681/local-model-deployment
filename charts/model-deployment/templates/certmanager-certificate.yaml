@@ -1,0 +1,18 @@
+{{- if and .Values.certManager.enabled .Values.certManager.certificate.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.certManager.certificate.name }}
+  namespace: {{ .Values.certManager.certificate.namespace }}
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  secretName: {{ .Values.certManager.certificate.secretName }}
+  commonName: {{ .Values.certManager.certificate.commonName | quote }}
+  dnsNames:
+{{ toYaml .Values.certManager.certificate.dnsNames | indent 4 }}
+  issuerRef:
+    name: {{ .Values.certManager.certificate.issuerRef.name }}
+    kind: {{ .Values.certManager.certificate.issuerRef.kind }}
+{{- end }}

@@ -1,14 +1,28 @@
 {{- range $name, $isvc := .Values.inferenceServices }}
 {{- if $isvc.enabled }}
+{{- $certClass := $isvc.certificate.class }}
+{{- if not $certClass }}
+{{-   if $.Values.certManager.enabled }}
+{{-     $certClass = $.Values.certManager.certificateClass.default }}
+{{-   end }}
+{{- end }}
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: {{ $isvc.name | default $name }}
   namespace: {{ $.Release.Namespace }}
-  {{- with $isvc.annotations }}
+  {{- if or $isvc.annotations $certClass $isvc.visibility }}
   annotations:
+{{- with $isvc.annotations }}
 {{ toYaml . | indent 4 }}
+{{- end }}
+{{- if $certClass }}
+    networking.knative.dev/certificate-class: {{ $certClass | quote }}
+{{- end }}
+{{- if $isvc.visibility }}
+    networking.knative.dev/visibility: {{ $isvc.visibility | quote }}
+{{- end }}
   {{- end }}
   {{- with $isvc.labels }}
   labels:

@@ -1,0 +1,34 @@
+{{- if and .Values.certManager.enabled .Values.certManager.trustBundle.enabled }}
+{{- $caBundle := .Values.certManager.trustBundle.caBundle }}
+{{- $caSecret := .Values.certManager.trustBundle.caSecret }}
+{{- $caConfigMap := .Values.certManager.trustBundle.caConfigMap }}
+{{- $namespaces := .Values.certManager.trustBundle.namespaces }}
+{{- if $namespaces }}
+  {{- range $ns := $namespaces }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knative-ca-bundle
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: knative-serving
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ $.Chart.AppVersion | quote }}
+  {{- if and $caSecret.name (not $caBundle) }}
+  annotations:
+    cert-manager.io/inject-ca-from-secret: {{ $ns }}/{{ $caSecret.name }}
+  {{- else if and $caConfigMap.name (not $caBundle) }}
+  annotations:
+    cert-manager.io/inject-ca-from-secret: {{ $ns }}/{{ $caConfigMap.name }}
+  {{- end }}
+data:
+  {{- if $caBundle }}
+  ca.crt: |
+{{ $caBundle | indent 4 }}
+  {{- else }}
+  ca.crt: ""
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

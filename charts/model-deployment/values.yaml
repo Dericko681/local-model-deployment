@@ -1,7 +1,82 @@
+certManager:
+  enabled: true
+  useExistingIssuer: true
+
+  issuers:
+    externalDomain:
+      name: "letsencrypt-prod"
+      kind: "ClusterIssuer"
+    clusterLocalDomain:
+      name: "vault-internal-issuer"
+      kind: "ClusterIssuer"
+    systemInternal:
+      name: "knative-selfsigned-issuer"
+      kind: "ClusterIssuer"
+
+  bootstrapLocalCA:
+    enabled: false
+    commonName: "knative-local-ca"
+
+  trustBundle:
+    enabled: true
+    caBundle: ""
+    caSecret:
+      name: ""
+      key: "ca.crt"
+    caConfigMap:
+      name: ""
+      key: "ca.crt"
+    namespaces:
+      - knative-serving
+      - kourier-system
+
+  certificateClass:
+    default: "cert-manager.certificate.networking.knative.dev"
+
+  rbac:
+    enabled: true
+    serviceAccountName: ""
+
+  certificate:
+    enabled: false
+    name: "llm-tls-cert"
+    namespace: "kourier-system"
+    secretName: "llm-tls"
+    commonName: "*.llm.local"
+    dnsNames:
+      - "*.llm.local"
+      - "*.llm-system.llm.local"
+    issuerRef:
+      name: "llm-selfsigned-issuer"
+      kind: "ClusterIssuer"
+
 serving:
   global:
     nameOverride: model-deployment
     createDefaultServiceAccount: false
+
+  rbac:
+    roles:
+      certmanager-reader:
+        enabled: true
+        type: ClusterRole
+        rules:
+          - apiGroups: ["cert-manager.io"]
+            resources: ["clusterissuers", "issuers"]
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["cert-manager.io"]
+            resources: ["certificates", "certificaterequests"]
+            verbs: ["get", "list", "watch", "create", "update", "delete"]
+    bindings:
+      certmanager-reader:
+        enabled: true
+        type: ClusterRoleBinding
+        roleRef:
+          identifier: certmanager-reader
+        subjects:
+          - kind: ServiceAccount
+            name: default
+            namespace: "{{ .Release.Namespace }}"
 
   configMaps:
     phi2-chat-template:
@@ -95,6 +170,9 @@ inferenceServices:
   phi2:
     enabled: true
     name: vllm-phi2
+    visibility: "cluster-local"
+    certificate:
+      class: ""
     annotations:
       autoscaling.knative.dev/minScale: "1"
       autoscaling.knative.dev/maxScale: "3"

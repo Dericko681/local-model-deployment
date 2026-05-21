@@ -1,0 +1,44 @@
+{{- if and .Values.certManager.enabled (not .Values.certManager.useExistingIssuer) }}
+{{- if .Values.certManager.bootstrapLocalCA.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.issuers.systemInternal.name }}
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" }}
+  namespace: cert-manager
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  secretName: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" }}-tls
+  commonName: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" | quote }}
+  dnsNames:
+    - {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" | quote }}
+    - "*.local"
+  isCA: true
+  issuerRef:
+    name: {{ .Values.certManager.issuers.systemInternal.name }}
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.issuers.clusterLocalDomain.name }}
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  ca:
+    secretName: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" }}-tls
+{{- end }}
+{{- end }}
