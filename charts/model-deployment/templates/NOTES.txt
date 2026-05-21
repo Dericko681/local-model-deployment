@@ -15,8 +15,8 @@ To check status:
 
 {{- if .Values.certManager.enabled }}
 Certificate management via cert-manager is enabled.
-{{- if .Values.certManager.bootstrapLocalCA.enabled }}
-Local CA issuer is being bootstrapped
+{{- if .Values.certManager.selfSigned.enabled }}
+Self-signed CA issuer is being bootstrapped for internal cluster TLS.
 {{- end }}
 {{- end }}
 

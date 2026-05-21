@@ -1,0 +1,39 @@
+{{- if .Values.certManager.guardrails.enabled }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: cert-system-defaults
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: {{ .Values.certManager.guardrails.limits.container.defaultRequest.cpu }}
+        memory: {{ .Values.certManager.guardrails.limits.container.defaultRequest.memory }}
+      default:
+        cpu: {{ .Values.certManager.guardrails.limits.container.default.cpu }}
+        memory: {{ .Values.certManager.guardrails.limits.container.default.memory }}
+      max:
+        cpu: {{ .Values.certManager.guardrails.limits.container.max.cpu }}
+        memory: {{ .Values.certManager.guardrails.limits.container.max.memory }}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: cert-system-quota
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  hard:
+    requests.cpu: {{ index .Values.certManager.guardrails.quota "requests.cpu" }}
+    requests.memory: {{ index .Values.certManager.guardrails.quota "requests.memory" }}
+    limits.cpu: {{ index .Values.certManager.guardrails.quota "limits.cpu" }}
+    limits.memory: {{ index .Values.certManager.guardrails.quota "limits.memory" }}
+    count/pods: {{ index .Values.certManager.guardrails.quota "count/pods" }}
+{{- end }}

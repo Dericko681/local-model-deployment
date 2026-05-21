@@ -1,44 +1,92 @@
-{{- if and .Values.certManager.enabled (not .Values.certManager.useExistingIssuer) }}
-{{- if .Values.certManager.bootstrapLocalCA.enabled }}
+{{- if .Values.certManager.enabled }}
+{{- if .Values.certManager.selfSigned.enabled }}
 ---
+# Self-signed bootstrap ClusterIssuer — signs the CA certificate
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: {{ .Values.certManager.issuers.systemInternal.name }}
+  name: cert-self-signed-basic
   labels:
     app.kubernetes.io/component: certmanager
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 spec:
   selfSigned: {}
 ---
+# CA Certificate — self-signed root CA for internal cluster TLS
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" }}
+  name: knative-internal-root-ca
   namespace: cert-manager
   labels:
     app.kubernetes.io/component: certmanager
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 spec:
-  secretName: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" }}-tls
-  commonName: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" | quote }}
-  dnsNames:
-    - {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" | quote }}
-    - "*.local"
   isCA: true
+  commonName: {{ .Values.certManager.selfSigned.commonName | quote }}
+  secretName: self-signed-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
   issuerRef:
-    name: {{ .Values.certManager.issuers.systemInternal.name }}
+    name: cert-self-signed-basic
     kind: ClusterIssuer
+    group: cert-manager.io
 ---
+# CA-based ClusterIssuer — uses the generated CA to sign serving certs
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: {{ .Values.certManager.issuers.clusterLocalDomain.name }}
+  name: self-signed-ca
   labels:
     app.kubernetes.io/component: certmanager
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 spec:
   ca:
-    secretName: {{ .Values.certManager.bootstrapLocalCA.commonName | default "knative-local-ca" }}-tls
+    secretName: self-signed-ca
+{{- end }}
+{{- if and .Values.certManager.solvers.http .Values.certManager.solvers.http.ingressClassName }}
+---
+# ACME HTTP-01 ClusterIssuer for external domain TLS
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: cert-acme-http
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.certManager.solvers.http.email }}
+    privateKeySecretRef:
+      name: cert-acme-http
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.certManager.solvers.http.ingressClassName }}
+{{- end }}
+{{- if .Values.certManager.issuerCloudflare }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: cert-cloudflare
+  labels:
+    app.kubernetes.io/component: certmanager
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  acme:
+    email: {{ .Values.certManager.issuerCloudflare.spec.acme.email }}
+    privateKeySecretRef:
+      name: cert-cloudflare
+    server: https://acme-v02.api.letsencrypt.org/directory
+    solvers:
+      - dns01:
+          cloudflare:
+            apiKeySecretRef:
+              key: api-token
+              name: cloudflare-secret
+            email: {{ .Values.certManager.issuerCloudflare.spec.acme.email }}
 {{- end }}
 {{- end }}

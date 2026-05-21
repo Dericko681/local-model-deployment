@@ -10,12 +10,12 @@ metadata:
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 data:
   issuerRef: |
-    name: {{ .Values.certManager.issuers.externalDomain.name | quote }}
-    kind: {{ .Values.certManager.issuers.externalDomain.kind | quote }}
+    name: {{ .Values.certManager.knative.issuerRefs.external.name | quote }}
+    kind: {{ .Values.certManager.knative.issuerRefs.external.kind | quote }}
   clusterLocalIssuerRef: |
-    name: {{ .Values.certManager.issuers.clusterLocalDomain.name | quote }}
-    kind: {{ .Values.certManager.issuers.clusterLocalDomain.kind | quote }}
+    name: {{ .Values.certManager.knative.issuerRefs.clusterLocal.name | quote }}
+    kind: {{ .Values.certManager.knative.issuerRefs.clusterLocal.kind | quote }}
   systemInternalIssuerRef: |
-    name: {{ .Values.certManager.issuers.systemInternal.name | quote }}
-    kind: {{ .Values.certManager.issuers.systemInternal.kind | quote }}
+    name: {{ .Values.certManager.knative.issuerRefs.systemInternal.name | quote }}
+    kind: {{ .Values.certManager.knative.issuerRefs.systemInternal.kind | quote }}
 {{- end }}

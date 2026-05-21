@@ -5,7 +5,7 @@
 {{- if $isvc.certificate }}{{ $certClass = $isvc.certificate.class }}{{ end }}
 {{- if not $certClass }}
 {{-   if $.Values.certManager.enabled }}
-{{-     $certClass = $.Values.certManager.certificateClass.default }}
+{{-     $certClass = $.Values.certManager.knative.certificateClass }}
 {{-   end }}
 {{- end }}
 {{- $visibility := $isvc.visibility | default $defaults.visibility }}

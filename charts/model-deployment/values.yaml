@@ -1,39 +1,69 @@
 # Cert-Manager configuration
 certManager:
   enabled: true
-  useExistingIssuer: true
 
-  issuers:
-    externalDomain:
-      name: "letsencrypt-prod"
-      kind: "ClusterIssuer"
-    clusterLocalDomain:
-      name: "vault-internal-issuer"
-      kind: "ClusterIssuer"
-    systemInternal:
-      name: "knative-selfsigned-issuer"
-      kind: "ClusterIssuer"
+  # Self-signed CA bootstrap for internal cluster TLS (Knative, KServe)
+  selfSigned:
+    enabled: true
+    commonName: "Knative Internal Root CA"
 
-  bootstrapLocalCA:
-    enabled: false
-    commonName: "knative-local-ca"
+  # ACME HTTP-01 solver ClusterIssuer for external domain TLS
+  solvers:
+    http:
+      ingressClassName: ""
+      email: ""
 
+  # Optional Cloudflare DNS-01 ClusterIssuer
+  issuerCloudflare: {}
+
+  # Knative cert-manager integration
+  knative:
+    certificateClass: "cert-manager.certificate.networking.knative.dev"
+    issuerRefs:
+      external:
+        name: "cert-acme-http"
+        kind: "ClusterIssuer"
+      clusterLocal:
+        name: "self-signed-ca"
+        kind: "ClusterIssuer"
+      systemInternal:
+        name: "self-signed-ca"
+        kind: "ClusterIssuer"
+
+  # Trust bundle for Knative internal TLS
   trustBundle:
     enabled: true
     caBundle: ""
     caSecret:
       name: ""
-      key: "ca.crt"
     caConfigMap:
       name: ""
-      key: "ca.crt"
     namespaces:
       - knative-serving
       - kourier-system
 
-  certificateClass:
-    default: "cert-manager.certificate.networking.knative.dev"
+  # Namespace resource guardrails
+  guardrails:
+    enabled: false
+    limits:
+      container:
+        defaultRequest:
+          cpu: 50m
+          memory: 64Mi
+        default:
+          cpu: 200m
+          memory: 256Mi
+        max:
+          cpu: "2"
+          memory: 2Gi
+    quota:
+      requests.cpu: 500m
+      requests.memory: 512Mi
+      limits.cpu: "3"
+      limits.memory: 4Gi
+      count/pods: 15
 
+  # Optional ingress TLS certificate
   certificate:
     enabled: false
     name: "llm-tls-cert"
@@ -44,7 +74,7 @@ certManager:
       - "*.llm.local"
       - "*.llm-system.llm.local"
     issuerRef:
-      name: "llm-selfsigned-issuer"
+      name: "cert-self-signed-ca"
       kind: "ClusterIssuer"
 
 serving:
