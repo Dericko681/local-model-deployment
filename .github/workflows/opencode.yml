@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      id-token: write    # Required for OIDC token
+      id-token: write
       contents: write
       pull-requests: write
       issues: write
@@ -58,12 +58,18 @@ jobs:
 
       - name: Setup OpenCode Config
         uses: ./.github/actions/opencode-config
+        env:
+          OPENCODE_BASE_URL: ${{ secrets.OPENCODE_BASE_URL }}
+          OAUTH2_ISSUER: ${{ secrets.OAUTH2_ISSUER }}
+          OAUTH2_CLIENT_ID: ${{ secrets.OAUTH2_CLIENT_ID }}
+          OAUTH2_CLIENT_SECRET: ${{ secrets.OAUTH2_CLIENT_SECRET }}
+          OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
 
       - name: Run OpenCode Review
         uses: anomalyco/opencode/github@v1.16.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          model: lightbridge/glm-5
+          model: lightbridge/${{ secrets.OPENCODE_MODEL }}
           agent: auto-review
           use_github_token: true

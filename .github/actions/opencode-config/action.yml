@@ -5,35 +5,43 @@ runs:
   steps:
     - name: Create OpenCode config
       shell: bash
+      env:
+        OPENCODE_BASE_URL: ${{ env.OPENCODE_BASE_URL }}
+        OAUTH2_ISSUER: ${{ env.OAUTH2_ISSUER }}
+        OAUTH2_CLIENT_ID: ${{ env.OAUTH2_CLIENT_ID }}
+        OAUTH2_CLIENT_SECRET: ${{ env.OAUTH2_CLIENT_SECRET }}
+        OPENCODE_MODEL: ${{ env.OPENCODE_MODEL }}
       run: |
         mkdir -p ~/.config/opencode
         cat > ~/.config/opencode/opencode.json << 'EOF'
         {
           "$schema": "https://opencode.ai/config.json",
           "logLevel": "DEBUG",
-          "plugin": [
-            "@vymalo/opencode-oauth2",
-            "@vymalo/opencode-models-info"
-          ],
+          "plugin": ["@vymalo/opencode-oauth2"],
           "provider": {
             "lightbridge": {
               "npm": "@ai-sdk/openai-compatible",
               "options": {
-                "baseURL": "https://api.ai.camer.digital/v1",
+                "baseURL": "${OPENCODE_BASE_URL}",
                 "oauth2": {
-                  "issuer": "https://auth.verif.fyi/realms/camer-digital/",
-                  "clientId": "converse-frontend",
+                  "issuer": "${OAUTH2_ISSUER}",
+                  "clientId": "${OAUTH2_CLIENT_ID}",
+                  "clientSecret": "${OAUTH2_CLIENT_SECRET}",
                   "scopes": ["openid"],
-                  "authFlow": "jwt_bearer",
-                  "subjectTokenSource": {
-                    "type": "github_actions",
-                    "audience": "https://auth.verif.fyi/realms/camer-digital/"
-                  },
-                  "meta": {
-                    "modelsInfoUrl": "/models"
-                  }
+                  "authFlow": "client_credentials"
+                }
+              },
+              "models": {
+                "${OPENCODE_MODEL}": {
+                  "id": "${OPENCODE_MODEL}",
+                  "tool_call": true
                 }
               }
+            }
+          },
+          "agent": {
+            "coder": {
+              "model": "lightbridge:${OPENCODE_MODEL}"
             }
           }
         }
