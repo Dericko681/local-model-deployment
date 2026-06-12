@@ -26,7 +26,7 @@ runs:
         mkdir -p ~/.config/opencode
         cat > ~/.config/opencode/opencode.json << EOF
         {
-          "$schema": "https://opencode.ai/config.json",
+          "\$schema": "https://opencode.ai/config.json",
           "logLevel": "DEBUG",
           "plugin": ["@vymalo/opencode-oauth2"],
           "provider": {
