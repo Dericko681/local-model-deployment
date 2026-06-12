@@ -1,0 +1,40 @@
+name: 'Setup OpenCode Config'
+description: 'Create opencode.json for GitHub Actions'
+runs:
+  using: 'composite'
+  steps:
+    - name: Create OpenCode config
+      shell: bash
+      run: |
+        mkdir -p ~/.config/opencode
+        cat > ~/.config/opencode/opencode.json << 'EOF'
+        {
+          "$schema": "https://opencode.ai/config.json",
+          "logLevel": "DEBUG",
+          "plugin": [
+            "@vymalo/opencode-oauth2",
+            "@vymalo/opencode-models-info"
+          ],
+          "provider": {
+            "lightbridge": {
+              "npm": "@ai-sdk/openai-compatible",
+              "options": {
+                "baseURL": "https://api.ai.camer.digital/v1",
+                "oauth2": {
+                  "issuer": "https://auth.verif.fyi/realms/camer-digital/",
+                  "clientId": "converse-frontend",
+                  "scopes": ["openid"],
+                  "authFlow": "jwt_bearer",
+                  "subjectTokenSource": {
+                    "type": "github_actions",
+                    "audience": "https://auth.verif.fyi/realms/camer-digital/"
+                  },
+                  "meta": {
+                    "modelsInfoUrl": "/models"
+                  }
+                }
+              }
+            }
+          }
+        }
+        EOF
