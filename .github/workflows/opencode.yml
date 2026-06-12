@@ -58,12 +58,12 @@ jobs:
 
       - name: Setup OpenCode Config
         uses: ./.github/actions/opencode-config
-        env:
-          OPENCODE_BASE_URL: ${{ secrets.OPENCODE_BASE_URL }}
-          OAUTH2_ISSUER: ${{ secrets.OAUTH2_ISSUER }}
-          OAUTH2_CLIENT_ID: ${{ secrets.OAUTH2_CLIENT_ID }}
-          OAUTH2_CLIENT_SECRET: ${{ secrets.OAUTH2_CLIENT_SECRET }}
-          OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
+        with:
+          opencode-base-url: ${{ secrets.OPENCODE_BASE_URL }}
+          oauth2-issuer: ${{ secrets.OAUTH2_ISSUER }}
+          oauth2-client-id: ${{ secrets.OAUTH2_CLIENT_ID }}
+          oauth2-client-secret: ${{ secrets.OAUTH2_CLIENT_SECRET }}
+          opencode-model: ${{ secrets.OPENCODE_MODEL }}
 
       - name: Run OpenCode Review
         uses: anomalyco/opencode/github@v1.16.2

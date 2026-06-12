@@ -1,19 +1,30 @@
 name: 'Setup OpenCode Config'
 description: 'Create opencode.json for GitHub Actions'
+inputs:
+  opencode-base-url:
+    required: true
+  oauth2-issuer:
+    required: true
+  oauth2-client-id:
+    required: true
+  oauth2-client-secret:
+    required: true
+  opencode-model:
+    required: true
 runs:
   using: 'composite'
   steps:
     - name: Create OpenCode config
       shell: bash
       env:
-        OPENCODE_BASE_URL: ${{ env.OPENCODE_BASE_URL }}
-        OAUTH2_ISSUER: ${{ env.OAUTH2_ISSUER }}
-        OAUTH2_CLIENT_ID: ${{ env.OAUTH2_CLIENT_ID }}
-        OAUTH2_CLIENT_SECRET: ${{ env.OAUTH2_CLIENT_SECRET }}
-        OPENCODE_MODEL: ${{ env.OPENCODE_MODEL }}
+        OPENCODE_BASE_URL: ${{ inputs.opencode-base-url }}
+        OAUTH2_ISSUER: ${{ inputs.oauth2-issuer }}
+        OAUTH2_CLIENT_ID: ${{ inputs.oauth2-client-id }}
+        OAUTH2_CLIENT_SECRET: ${{ inputs.oauth2-client-secret }}
+        OPENCODE_MODEL: ${{ inputs.opencode-model }}
       run: |
         mkdir -p ~/.config/opencode
-        cat > ~/.config/opencode/opencode.json << 'EOF'
+        cat > ~/.config/opencode/opencode.json << EOF
         {
           "$schema": "https://opencode.ai/config.json",
           "logLevel": "DEBUG",
