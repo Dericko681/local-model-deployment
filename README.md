@@ -98,6 +98,8 @@ kubectl patch configmap config-features -n knative-serving \
 
 ### 3. Install KServe
 
+
+
 ```bash
 kubectl create namespace kserve
 kubectl apply --server-side --force-conflicts \
