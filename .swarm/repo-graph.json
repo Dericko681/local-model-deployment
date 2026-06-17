@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "workspaceRoot": "/home/derick/projects/local-model-deployment",
+  "nodes": {},
+  "edges": [],
+  "metadata": {
+    "generatedAt": "2026-06-16T09:06:01.047Z",
+    "generator": "repo-graph",
+    "nodeCount": 0,
+    "edgeCount": 0
+  }
+}
